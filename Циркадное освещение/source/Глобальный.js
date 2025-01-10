@@ -88,7 +88,7 @@ const MAX_COLOR_TEMPERATURE = 400;
 const MINUTES_IN_HOUR = 60;
 
 const DEBUG = false;
-const DEBUG_INFO = true;
+const DEBUG_INFO = false;
 
 function getCircadianLight(preset) {
     var date = new Date()

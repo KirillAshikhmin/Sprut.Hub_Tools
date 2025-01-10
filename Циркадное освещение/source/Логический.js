@@ -1,8 +1,9 @@
 info = {
   name: "Циркадное освещение",
-  description: "Циркадное освещение. Устанавливает цвет и яркость лампы в зависимости от времени. Значение берется из глобального сценария",
+  description: "Устанавливает цвет и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
   version: "1.0",
   author: "@BOOMikru",
+  onStart: false,
 
   sourceServices: [HS.Lightbulb],
   sourceCharacteristics: [HC.On, HC.Brightness],
@@ -11,15 +12,7 @@ info = {
     DontChangeBright: {
       name: {
         en: "Dont change brightness automatically",
-        ru: "Не менять яркость автоматически после ручного изменения"
-      },
-      type: "Boolean",
-      value: "true"
-    },
-    TurnOnByBrightChange: {
-      name: {
-        en: "Turn on by bright change",
-        ru: "Связь включения и уровня. Для циркадного режима необходимо использовать этот параметр, а стандартную одноимённую логику отключить"
+        ru: "Не менять яркость автоматически после ручного изменения. Сбрасывается при выключении лампы"
       },
       type: "Boolean",
       value: "true"
@@ -27,7 +20,7 @@ info = {
     Preset: {
       name: {
         en: "Preset",
-        ru: "Режим работы (0 - для спальни, 1 - для санузла, 2 - для кухни (с постоянной максимальной яркостью). Можно добавлять и редактировать в глобальном шаблоне)"
+        ru: "Режим работы (0 - для спальни, 1 - для санузла, 2 - для кухни)"
       },
       type: "Integer",
       value: "0"
@@ -38,34 +31,22 @@ info = {
     //Задача на обновление
     cronTask: undefined,
     // Яркость изменена вручную
-    brightChanged: false,
-    // Лампа включена изменением яркости
-    turnOnByBright: false,
+    brightChanged: false
   }
 }
 
 
 function trigger(source, value, variables, options) {
-  let isLampOn = source.getService().getCharacteristic(HC.On).getValue()
   let isBright = source.getType() == HC.Brightness
-
   // Изменили яркость
   if (isBright) {
-    variables.turnOnByBright = !isLampOn
-    // Связь включения и уровня
-    if (options.TurnOnByBrightChange)
-      source.getService().getCharacteristic(HC.On).setValue(true);
-
     // Если включено "Не менять яркость", и ещё не меняли
     if (options.DontChangeBright && !variables.brightChanged) {
-      if (variables.turnOnByBright) {
-        variables.brightChanged = true
-      } else {
-        // событие вызывается и при автоматической смене яркости
+     // событие вызывается и при автоматической смене яркости
         let circadianBright = global.getCircadianLight(options.Preset)[1]
         let changed = circadianBright != value
         variables.brightChanged = changed
-      }
+        console.info("Проверка яркости circadianBright {}, value {}, changed {}", circadianBright, value, changed)
     }
   } else {
     // Включили или выключили
@@ -77,9 +58,11 @@ function trigger(source, value, variables, options) {
         return;
       }
 
-      // не менять яркость, если поменяли вручную
-      var dontChangeBright = variables.brightChanged == true;
-      global.setCircadianLightForService(source.getService(), options.Preset, dontChangeBright);
+      setTimeout(function () {
+        var dontChangeBright = variables.brightChanged == true;
+        global.setCircadianLightForService(source.getService(), options.Preset, dontChangeBright);
+      }, 100)
+      
 
       // Отменяем задачу на обновление
       if (variables.cronTask && variables.cronTask != undefined) {
@@ -100,7 +83,6 @@ function trigger(source, value, variables, options) {
         variables.cronTask = undefined;
       }
       variables.brightChanged = false
-      variables.turnOnByBright = false
     }
   }
 }

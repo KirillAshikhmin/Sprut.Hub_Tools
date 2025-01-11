@@ -1,7 +1,7 @@
 info = {
   name: "Циркадное освещение",
-  description: "Устанавливает цвет и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
-  version: "2.0",
+  description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
+  version: "2.1",
   author: "@BOOMikru",
   onStart: false,
 
@@ -129,19 +129,11 @@ function trigger(source, value, variables, options) {
 
       // Устанавливаем начальные значения циркадного режима с задержкой, что бы успела отработать логика связи уровня и включения
       setTimeout(function () {
-        // setCircadianValue(source.getService(), options.Preset, variables)
         var dontChangeBright = variables.brightChanged == true;
         var dontChangeTemp = variables.tempChanged == true;
         var dontChangeHue = variables.hueChanged == true;
         var dontChangeSaturate = variables.satChanged == true;
 
-        console.info(
-          "!!!! Не менять: яркость: {}, температуру: {}, оттенок: {}, насыщенность: {}",
-          dontChangeBright,
-          dontChangeTemp,
-          dontChangeHue,
-          dontChangeSaturate
-        )
         global.setCircadianLightForService(source.getService(), options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate);
       }, 100)
 
@@ -153,8 +145,6 @@ function trigger(source, value, variables, options) {
 
       // Запускаем новую задачу на обновление
       let task = Cron.schedule("0 */5 * * * *", function () {
-        //setCircadianValue(source.getService(), options.Preset, variables)
-
         var dontChangeBright = variables.brightChanged == true;
         var dontChangeTemp = variables.tempChanged == true;
         var dontChangeHue = variables.hueChanged == true;

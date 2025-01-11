@@ -1,0 +1,11 @@
+{
+  "scenarioTemplate": {
+    "name": "Конвертер температуры в цвет",
+    "desc": "Устанавливает оттенок и нысыщенность у лампы при изменении её цветовой температуры. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
+    "active": true,
+    "onStart": false,
+    "sync": false,
+    "data": "info = {\n  name: \"Конвертер температуры в цвет\",\n  description: \"Устанавливает оттенок и нысыщенность у лампы при изменении её цветовой температуры. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение\",\n  version: \"1.0\",\n  author: \"@BOOMikru\",\n  onStart: false,\n\n  sourceServices: [HS.Lightbulb],\n  sourceCharacteristics: [HC.ColorTemperature],\n}\n\nfunction trigger(source, value, variables, options) {\n    const hueAndSat = global.getHueAndSaturationFromMired(value)\n    const hue = source.getService().getCharacteristic(HC.Hue)\n    const sat = source.getService().getCharacteristic(HC.Saturation)\n    if (hue == null || sat == null) {\n        console.error(\"Циркадное освещение. Лампочка {}, не умеет изменять оттенок или насыщенность\", source.getAccessory())\n        return;\n    }\n\n    hue.setValue(hueAndSat[0])\n    sat.setValue(hueAndSat[1])\n}",
+    "type": "LOGIC"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "scenarioTemplate": {
+    "name": "Скрыть устройство если выключено",
+    "desc": "Скрывает выключенные устройства. Используется, например, для создания комнаты-индикатора, куда добавляются виртуальные копии всех устройств, за которыми нужен контроль и включается логика. Если включено - будет отображаться, иначе скрываться. Обновления тут: https://github.com/KirillAshikhmin/Sprut.Hub_Tools",
+    "active": true,
+    "onStart": true,
+    "sync": true,
+    "data": "info = {\n    name: \"Скрыть устройство если выключено\",\n    description: \"Скрывает выключенные устройства. Используется, например, для создания комнаты-индикатора, куда добавляются виртуальные копии всех устройств, за которыми нужен контроль и включается логика. Если включено - будет отображаться, иначе скрываться. Обновления тут: https://github.com/KirillAshikhmin/Sprut.Hub_Tools\",\n    version: \"0.1\",\n    author: \"@BOOMikru\",\n    onStart: true,\n\n    sourceServices: [\n        HS.Lightbulb,\n        HS.Switch,\n        HS.Television,\n        HS.Window,\n        HS.ContactSensor,\n        HS.Door,\n        HS.Fan,\n        HS.FanBasic,\n        HS.GarageDoorOpener,\n        HS.Valve,\n        HS.Faucet,\n        HS.AirPurifier,\n        HS.Outlet,\n        HS.HumidifierDehumidifier,\n        HS.WindowCovering\n    ],\n    sourceCharacteristics: [\n        HC.On,\n        HC.Active,\n        HC.ContactSensorState,\n        HC.CurrentPosition,\n        HC.CurrentDoorState\n    ],\n}\nfunction trigger(source, value, variables, options) {\n    const service = source.getService()\n    if (source.getType() == HC.On) {\n        service.setVisible(value)\n    }\n    if (source.getType() == HC.Active) {\n        service.setVisible(value == 1)\n    }\n    if (source.getType() == HC.CurrentPosition) {\n        service.setVisible(value == 100)\n    }\n    if (source.getType() == HC.ContactSensorState) {\n        service.setVisible(value == 1)\n    }\n    if (source.getType() == HC.CurrentDoorState) {\n        service.setVisible(value == 0)\n    }\n}",
+    "type": "LOGIC"
+  }
+}

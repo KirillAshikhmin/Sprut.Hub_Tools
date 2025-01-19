@@ -1,9 +1,8 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
-  version: "2.1",
+  version: "2.2",
   author: "@BOOMikru",
-  onStart: false,
 
   sourceServices: [HS.Lightbulb],
   sourceCharacteristics: [HC.On, HC.Brightness, HC.ColorTemperature, HC.Hue, HC.Saturation],
@@ -12,7 +11,7 @@ info = {
     DontChangeParam: {
       name: {
         en: "Dont change parameter automatically",
-        ru: "Не менять параметр автоматически после его ручного изменения. Сбрасывается при выключении лампы"
+        ru: "Не менять определённый параметр автоматически после его ручного изменения. Сбрасывается при выключении лампы"
       },
       type: "Boolean",
       value: "true"
@@ -20,7 +19,7 @@ info = {
     StopCircadionAfterChangeParam: {
       name: {
         en: "Stop circadion after change param",
-        ru: "Останавливать циркадный режим после изменения любого параметра. Работает только совместно с выключенной настройкой выше"
+        ru: "Останавливать циркадный режим после изменения любого из параметров. Работает только совместно с выключенной настройкой выше"
       },
       type: "Boolean",
       value: "false"
@@ -51,6 +50,7 @@ info = {
 
 const CIRCADIAN_LIGHT_DEBUG_INFO = false;
 
+
 function trigger(source, value, variables, options) {
 
   const isBright = source.getType() == HC.Brightness
@@ -66,20 +66,20 @@ function trigger(source, value, variables, options) {
 
       if (isBright && !variables.brightChanged) {
         let circadianBright = global.getCircadianLight(options.Preset)[1]
-        let changed = circadianBright != value
+        let changed = difference(circadianBright, value) > 1
         variables.brightChanged = changed
       }
 
       if (isTemp && !variables.tempChanged) {
         let circadianTemp = global.getCircadianLight(options.Preset)[0]
-        let changed = circadianTemp != value
+        let changed = difference(circadianTemp, value) > 1
         variables.tempChanged = changed
       }
 
       if (isHue && !variables.hueChanged) {
         let circadianTemp = global.getCircadianLight(options.Preset)[0]
         let hueAndSat = global.getHueAndSaturationFromMired(circadianTemp)
-        let changed = hueAndSat[0] != value
+        let changed = difference(hueAndSat[0], value) > 1
         variables.hueChanged = changed
         if (changed)
           variables.tempChanged = true
@@ -88,7 +88,7 @@ function trigger(source, value, variables, options) {
       if (isSaturation && !variables.satChanged) {
         let circadianTemp = global.getCircadianLight(options.Preset)[0]
         let hueAndSat = global.getHueAndSaturationFromMired(circadianTemp)
-        let changed = hueAndSat[1] != value
+        let changed = difference(hueAndSat[1], value) > 1
         variables.satChanged = changed
         if (changed)
           variables.tempChanged = true
@@ -96,23 +96,23 @@ function trigger(source, value, variables, options) {
     }
 
     if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-      if (isBright && variables.brightChanged) console.info("Яркость изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
-      if (isTemp && variables.tempChanged) console.info("Температура изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
-      if (isHue && variables.hueChanged) console.info("Оттенок изменен вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
-      if (isSaturation && variables.satChanged) console.info("Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
+      if (isBright && variables.brightChanged) console.info("Циркадное освещение. Яркость изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
+      if (isTemp && variables.tempChanged) console.info("Циркадное освещение. Температура изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
+      if (isHue && variables.hueChanged) console.info("Циркадное освещение. Оттенок изменен вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
+      if (isSaturation && variables.satChanged) console.info("Циркадное освещение. Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", source.getAccessory())
     }
 
     if (variables.cronTask && variables.brightChanged && (variables.tempChanged || (variables.hueChanged && variables.satChanged))) {
       if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", source.getAccessory())
+        console.info("Циркадное освещение. Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", source.getAccessory())
       }
-      stop(variables)
+      stop(variables, source.getAccessory())
       return
     }
 
     if (options.StopCircadionAfterChangeParam && variables.cronTask && (variables.brightChanged || variables.tempChanged || variables.hueChanged || variables.satChanged)) {
       if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", source.getAccessory())
+        console.info("Циркадное освещение. Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", source.getAccessory())
       }
       stop(variables)
       return
@@ -123,7 +123,7 @@ function trigger(source, value, variables, options) {
 
       const brightness = source.getService().getCharacteristic(HC.Brightness);
       if (brightness == null) {
-        console.error("Лампочка {}, не умеет изменять яркость", source.getAccessory())
+        console.error("Циркадное освещение. Лампочка {}, не умеет изменять яркость", source.getAccessory())
         return;
       }
 
@@ -144,7 +144,7 @@ function trigger(source, value, variables, options) {
       }
 
       // Запускаем новую задачу на обновление
-      let task = Cron.schedule("0 */5 * * * *", function () {
+      let task = Cron.schedule("*/30 * * * * *", function () {
         var dontChangeBright = variables.brightChanged == true;
         var dontChangeTemp = variables.tempChanged == true;
         var dontChangeHue = variables.hueChanged == true;
@@ -153,13 +153,13 @@ function trigger(source, value, variables, options) {
       });
       variables.cronTask = task;
       if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Устройство включено. Циркадный режим запущен для {}", source.getAccessory())
+        console.info("Циркадное освещение. ==== ЗАПУСК ==== Устройство включено. Циркадный режим запущен для {}", source.getAccessory())
       }
     } else {
       if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Устройство выключно. Циркадный режим остановлен для {}", source.getAccessory())
+        console.info("Циркадное освещение. Устройство выключно {}", source.getAccessory())
       }
-      stop(variables)
+      stop(variables, source.getAccessory())
 
       // Сбрасываем состояние при выключении
       variables.brightChanged = false
@@ -178,10 +178,15 @@ function setCircadianValue(service, preset, variables) {
   global.setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate);
 }
 
-function stop(variables) {
+function stop(variables, accessory) {
   // Выключили лампу. Отменяем задачу на циркаду и сбрасываем параметры
   if (variables.cronTask) {
     variables.cronTask.clear()
     variables.cronTask = undefined;
   }
+  console.info("Циркадное освещение. ==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", accessory)
+}
+
+function difference(a, b) {
+  return Math.abs(a - b);
 }

@@ -50,7 +50,6 @@ info = {
 
 const CIRCADIAN_LIGHT_DEBUG_INFO = false;
 
-
 function trigger(source, value, variables, options) {
 
   const isBright = source.getType() == HC.Brightness
@@ -144,7 +143,7 @@ function trigger(source, value, variables, options) {
       }
 
       // Запускаем новую задачу на обновление
-      let task = Cron.schedule("*/30 * * * * *", function () {
+      let task = Cron.schedule("0 */5 * * * *", function () {
         var dontChangeBright = variables.brightChanged == true;
         var dontChangeTemp = variables.tempChanged == true;
         var dontChangeHue = variables.hueChanged == true;

@@ -176,6 +176,15 @@ function trigger(source, value, variables, options) {
         GlobalVariables[name] = false
         reset(variables)
         restartCron(source, variables, options)
+
+        var enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
+        var enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
+        const circadianValue = global.getCircadianLight(options.Preset)
+
+        if (enableBrightByWhatChange)
+          service.getCharacteristic(HC.Brightness).setValue(circadianValue[1])
+        if (enableTempByWhatChange)
+          service.getCharacteristic(HC.ColorTemperature).setValue(circadianValue[0])
       }
     }, 500)
   }

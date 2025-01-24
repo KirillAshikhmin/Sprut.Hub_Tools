@@ -303,6 +303,11 @@ function trigger(source, value, variables, options) {
     } else {
       reset(variables)
       stop(variables, source)
+
+      if (variables.reset.task != undefined) {
+        variables.reset.task.clear()
+        variables.reset.task = undefined
+      }
     }
   }
 }
@@ -352,11 +357,6 @@ function stop(variables, source) {
 
 // Сбрасываем состояние при выключении
 function reset(variables) {
-
-  if (variables.reset.task != undefined) {
-    variables.reset.task.clear()
-    variables.reset.task = undefined
-  }
   if (variables.smoothOn.task != undefined) {
     variables.smoothOn.task.clear()
     variables.smoothOn.task = undefined

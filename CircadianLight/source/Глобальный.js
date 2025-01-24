@@ -35,17 +35,18 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     const temp = tempAndBright[0];
     const bright = tempAndBright[1];
     let hueAndSaturation = [0, 0]
-    
-    if (CIRCADIAN_LIGHT_DEBUG)
+
+    if (CIRCADIAN_LIGHT_DEBUG_INFO)
         console.info(
-            "Циркадное освещение.  Режим: {}. Температура: {}. Яркость: {}, Не менять: яркость: {}, температуру: {}, оттенок: {}, насыщенность: {}",
+            "Циркадное освещение.  Режим: {}. Температура: {}. Яркость: {}, Не менять: яркость: {}, температуру: {}, оттенок: {}, насыщенность: {}. {}",
             preset,
             temp,
             bright,
             dontChangeBright,
             dontChangeTemp,
             dontChangeHue,
-            dontChangeSaturate
+            dontChangeSaturate,
+            getCircadianLightServiceName(service)
         )
 
     let allowTemperatureChange = !dontChangeTemp
@@ -55,7 +56,7 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
 
     const brightness = service.getCharacteristic(HC.Brightness);
     if (brightness == null) {
-        console.warn("Циркадное освещение. Лампочка {}, не умеет изменять яркость", source.getAccessory())
+        console.warn("Циркадное освещение. Лампочка {}, не умеет изменять яркость", getCircadianLightServiceName(service))
         return;
     }
 
@@ -74,7 +75,7 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     }
 
     if (!allowBrightChange && !allowTemperatureChange && !allowHueChange && !allowSaturationChange) {
-        console.warn("Циркадное освещение. Для лампочки {}, запрещено менять все параметры сценарием или свойствами", source.getAccessory())
+        console.warn("Циркадное освещение. Для лампочки {}, запрещено менять все параметры сценарием или свойствами", getCircadianLightServiceName(service))
         return
     }
 
@@ -82,17 +83,16 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     bulb.setValue(true);
 
     if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        const accName = service.getAccessory().getName()
-        const sName = service.getName()
-        const name = accName == sName ? accName : accName + " " + sName
+        const name = getCircadianLightServiceName(service)
 
-        var text = "Циркадное освещение. " + name + ". Установлено: "
+        var text = "Циркадное освещение. Установлено: "
         if (allowTemperatureChange) text += " Температура " + temp + ";"
         if (allowBrightChange) text += " Яркость " + bright + ";"
         else {
             if (allowHueChange) text += " Оттенок " + hueAndSaturation[0] + ";"
             if (allowSaturationChange) text += " Насыщенность " + hueAndSaturation[1] + ";"
         }
+        text += " " + name
         console.info(text)
     }
 
@@ -143,4 +143,29 @@ function getHueAndSaturationFromMired(mired) {
 
         return [hue, saturation];
     }
+}
+
+function resetCircadianLight(service) {
+    GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true
+}
+
+function setCircadianLightDisabled(service, disabled) {
+    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = disabled
+}
+
+function getCircadianLightGlobalVariableForReset(service) {
+    return "CircadianLight_" + service.getUUID() + "_reset"
+}
+
+function getCircadianLightGlobalVariableForDisable(service) {
+    return "CircadianLight_" + service.getUUID() + "_disabled"
+}
+
+function getCircadianLightServiceName(service) {
+    const acc = service.getAccessory();
+    const room = acc.getRoom().getName()
+    const accName = service.getAccessory().getName()
+    const sName = service.getName()
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName)
+    return name
 }

@@ -1,5 +1,5 @@
 info = {
-  name: "Циркадное освещение 3",
+  name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
   version: "3.1",
   author: "@BOOMikru",

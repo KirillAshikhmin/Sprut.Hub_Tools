@@ -175,7 +175,6 @@ function trigger(source, value, variables, options) {
         // Включили, надо и перезапустить
         GlobalVariables[resetName] = true
       }
-      console.info("check reset")
 
       if (GlobalVariables[resetName] == true) {
         GlobalVariables[resetName] = false

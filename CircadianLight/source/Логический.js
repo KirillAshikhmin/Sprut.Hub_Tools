@@ -1,7 +1,7 @@
 info = {
-  name: "Циркадное освещение",
+  name: "Циркадное освещение 3",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "3.0",
+  version: "3.1",
   author: "@BOOMikru",
 
   sourceServices: [HS.Lightbulb],
@@ -100,11 +100,13 @@ info = {
       hue: false,
       // Насыщенность изменена вручную
       sat: false,
-    }
+    },
+    disabled: false
   }
 }
 
-const CIRCADIAN_LIGHT_DEBUG_INFO = false;
+const CIRCADIAN_LIGHT_DEBUG = true;
+const DEBUG_TITLE = "Циркадное освещение. "
 
 
 function compute(source, value, variables, options) {
@@ -148,46 +150,61 @@ function compute(source, value, variables, options) {
 
 function trigger(source, value, variables, options) {
   const service = source.getService()
+  const isOn = source.getType() == HC.On
   const disableName = global.getCircadianLightGlobalVariableForDisable(service)
+  const resetName = global.getCircadianLightGlobalVariableForReset(source.getService())
+  variables.reset.name = resetName
+  if (isOn && value) {
+    GlobalVariables[resetName] = false
+
+    variables.reset.task = setInterval(function () {
+      // Выключили, останавливаем
+      if (GlobalVariables[disableName] == true && variables.disabled != true) {
+        if (CIRCADIAN_LIGHT_DEBUG)
+          console.info(DEBUG_TITLE + "==== ОТКЛЮЧЕНИЕ ==== Циркадный режим отключен для {}", getName(source))
+        variables.disabled = true
+        reset(variables)
+        stop(source, variables)
+        return;
+      }
+      // Включили, возобновляем работу
+      if (GlobalVariables[disableName] == false && variables.disabled == true) {
+        if (CIRCADIAN_LIGHT_DEBUG)
+          console.info(DEBUG_TITLE + "==== ВКЛЮЧЕНИЕ ==== Циркадный режим включен для {}", getName(source))
+        variables.disabled = false
+        // Включили, надо и перезапустить
+        GlobalVariables[resetName] = true
+      }
+      console.info("check reset")
+
+      if (GlobalVariables[resetName] == true) {
+        GlobalVariables[resetName] = false
+        reset(variables)
+        setCircadianValue(source.getService(), variables, options)
+        restartCron(source, variables, options)
+      }
+    }, 1000)
+  }
+
+
+  if (isOn && !value) {
+    if (variables.reset.task != undefined) {
+      variables.reset.task.clear()
+      variables.reset.task = undefined
+    }
+    // check disabled
+
+  }
+
+
   if (GlobalVariables[disableName] == true) return;
 
-  const isOn = source.getType() == HC.On
   const isBright = source.getType() == HC.Brightness
   const isTemp = source.getType() == HC.ColorTemperature
   const isHue = source.getType() == HC.Hue
   const isSaturation = source.getType() == HC.Saturation
 
-  if (isOn && value) {
-    variables.reset.name = global.getCircadianLightGlobalVariableForReset(source.getService())
-    GlobalVariables[variables.reset.name] = false
-    variables.reset.task = setInterval(function () {
-      let name = variables.reset.name
-      if (name == undefined) {
-        if (variables.reset.task != undefined) {
-          variables.reset.task.clear()
-          variables.reset.task = undefined
-        }
-        if (variables.smoothOn.task != undefined) {
-          variables.smoothOn.task.clear()
-          variables.smoothOn.task = undefined
-        }
-      }
-      if (GlobalVariables[name] == true) {
-        GlobalVariables[name] = false
-        reset(variables)
-        restartCron(source, variables, options)
 
-        var enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
-        var enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
-        const circadianValue = global.getCircadianLight(options.Preset)
-
-        if (enableBrightByWhatChange)
-          service.getCharacteristic(HC.Brightness).setValue(circadianValue[1])
-        if (enableTempByWhatChange)
-          service.getCharacteristic(HC.ColorTemperature).setValue(circadianValue[0])
-      }
-    }, 500)
-  }
 
   // событие вызывается и при автоматической смене яркости
   if (isBright || isTemp || isHue || isSaturation) {
@@ -231,26 +248,24 @@ function trigger(source, value, variables, options) {
       }
     }
 
-    if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-      if (isBright && variables.changed.bright) console.info("Циркадное освещение. Яркость изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
-      if (isTemp && variables.changed.temp) console.info("Циркадное освещение. Температура изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
-      if (isHue && variables.changed.hue) console.info("Циркадное освещение. Оттенок изменен вручную. Больше меняться автоматически не будет для {}", getName(source))
-      if (isSaturation && variables.changed.sat) console.info("Циркадное освещение. Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
+    if (CIRCADIAN_LIGHT_DEBUG) {
+      if (isBright && variables.changed.bright) console.info(DEBUG_TITLE + "Яркость изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
+      if (isTemp && variables.changed.temp) console.info(DEBUG_TITLE + "Температура изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
+      if (isHue && variables.changed.hue) console.info(DEBUG_TITLE + "Оттенок изменен вручную. Больше меняться автоматически не будет для {}", getName(source))
+      if (isSaturation && variables.changed.sat) console.info(DEBUG_TITLE + "Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", getName(source))
     }
 
     if (variables.cronTask && variables.changed.bright && (variables.changed.temp || (variables.changed.hue && variables.changed.sat))) {
-      if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Циркадное освещение. Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", getName(source))
-      }
-      stop(variables, source)
+      if (CIRCADIAN_LIGHT_DEBUG)
+        console.info(DEBUG_TITLE + "Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", getName(source))
+      stop(source, variables)
       return
     }
 
     if (options.StopCircadionAfterChangeParam && variables.cronTask && (variables.changed.bright || variables.changed.temp || variables.changed.hue || variables.changed.sat)) {
-      if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        console.info("Циркадное освещение. Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", getName(source))
-      }
-      stop(variables, source)
+      if (CIRCADIAN_LIGHT_DEBUG)
+        console.info(DEBUG_TITLE + "Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", getName(source))
+      stop(source, variables)
       return
     }
   } else {
@@ -259,7 +274,7 @@ function trigger(source, value, variables, options) {
 
       const brightness = source.getService().getCharacteristic(HC.Brightness);
       if (brightness == null) {
-        console.error("Циркадное освещение. Лампочка {}, не умеет изменять яркость", getName(source))
+        console.error(DEBUG_TITLE + "Лампочка {}, не умеет изменять яркость", getName(source))
         return;
       }
 
@@ -269,16 +284,16 @@ function trigger(source, value, variables, options) {
       const circadianValue = global.getCircadianLight(options.Preset)
 
       if (enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp) {
-        service.getCharacteristic(HC.ColorTemperature).setValue(circadianValue[0])
+        global.setCircadianLightForService(service, options.Preset, true, false, false, false);
       }
 
       let brightWhenOff = variables.startParameter.brightWhenOff
       let target = brightWhenOff > 1 ? brightWhenOff : circadianValue[1]
-      let br = service.getCharacteristic(HC.Brightness)
+      let brightCharacteristic = service.getCharacteristic(HC.Brightness)
       if (!variables.changed.bright && !variables.startParameter.isTurnOnByBright && enableBrightByWhatChange && options.SmoothOn && target > 1) {
         variables.smoothOn.active = true
         let currentBr = 1
-        br.setValue(currentBr)
+        brightCharacteristic.setValue(currentBr)
         let increaseBy = (target / 15) | 0
         setTimeout(function () {
           if (service.getCharacteristic(HC.On).getValue()) {
@@ -289,20 +304,20 @@ function trigger(source, value, variables, options) {
                 variables.smoothOn.active = false
               }
               currentBr = Math.min(currentBr + increaseBy, target)
-              br.setValue(currentBr)
+              brightCharacteristic.setValue(currentBr)
             }, 150)
             variables.smoothOn.task = interval
           }
         }, 300);
       } else {
-        br.setValue(target)
+        brightCharacteristic.setValue(target)
       }
 
       restartCron(source, variables, options)
 
     } else {
       reset(variables)
-      stop(variables, source)
+      stop(source, variables)
 
       if (variables.reset.task != undefined) {
         variables.reset.task.clear()
@@ -312,12 +327,16 @@ function trigger(source, value, variables, options) {
   }
 }
 
-function setCircadianValue(service, preset, variables) {
-  var dontChangeBright = variables.changed.bright == true;
-  var dontChangeTemp = variables.changed.temp == true;
-  var dontChangeHue = variables.changed.hue == true;
-  var dontChangeSaturate = variables.changed.sat == true;
-  global.setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate);
+function setCircadianValue(service, variables, options) {
+  var enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
+  var enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
+
+  var dontChangeBright = variables.changed.bright == true || !enableBrightByWhatChange || variables.smoothOn.active
+  var dontChangeTemp = variables.changed.temp == true || !enableTempByWhatChange
+  var dontChangeHue = variables.changed.hue == true || !enableTempByWhatChange
+  var dontChangeSaturate = variables.changed.sat == true || !enableTempByWhatChange
+
+  global.setCircadianLightForService(service, options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate);
 }
 
 function restartCron(source, variables, options) {
@@ -326,33 +345,32 @@ function restartCron(source, variables, options) {
     variables.cronTask.clear()
   }
 
-  // Что изменять? (0 - Яркость и температуру, 1 - только яркость, 2 - только температуру)
-  var enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
-  var enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
 
   // Запускаем новую задачу на обновление
   let task = Cron.schedule("0 */5 * * * *", function () {
-    var dontChangeBright = variables.changed.bright == true || !enableBrightByWhatChange || variables.smoothOn.active
-    var dontChangeTemp = variables.changed.temp == true || !enableTempByWhatChange
-    var dontChangeHue = variables.changed.hue == true || !enableTempByWhatChange
-    var dontChangeSaturate = variables.changed.sat == true || !enableTempByWhatChange
-    global.setCircadianLightForService(source.getService(), options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate);
+    const disableName = global.getCircadianLightGlobalVariableForDisable(source.getService())
+    if (GlobalVariables[disableName] == true) {
+      stop(source, variables)
+      reset(variables)
+    }
+
+    setCircadianValue(source.getService(), variables, options)
   });
+
   variables.cronTask = task;
-  if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-    console.info("Циркадное освещение. ==== ЗАПУСК ==== Циркадный режим запущен для {}", getName(source))
-  }
+  if (CIRCADIAN_LIGHT_DEBUG)
+    console.info(DEBUG_TITLE + "==== ЗАПУСК ==== Циркадный режим запущен для {}", getName(source))
 }
 
-function stop(variables, source) {
+function stop(source, variables) {
   variables.useCompute = true
   // Выключили лампу. Отменяем задачу на циркаду и сбрасываем параметры
   if (variables.cronTask) {
     variables.cronTask.clear()
     variables.cronTask = undefined;
   }
-  if (CIRCADIAN_LIGHT_DEBUG_INFO)
-    console.info("Циркадное освещение. ==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", getName(source))
+  if (CIRCADIAN_LIGHT_DEBUG)
+    console.info(DEBUG_TITLE + "==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", getName(source))
 }
 
 // Сбрасываем состояние при выключении
@@ -380,4 +398,3 @@ function difference(a, b) {
 function getName(source) {
   return global.getCircadianLightServiceName(source.getService())
 }
-

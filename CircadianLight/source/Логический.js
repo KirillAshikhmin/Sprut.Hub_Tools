@@ -105,7 +105,7 @@ info = {
   }
 }
 
-const CIRCADIAN_LIGHT_DEBUG = true;
+const CIRCADIAN_LIGHT_DEBUG = false;
 const DEBUG_TITLE = "Циркадное освещение. "
 
 

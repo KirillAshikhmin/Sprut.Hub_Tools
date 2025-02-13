@@ -15,7 +15,7 @@ function getCircadianLight(preset) {
 
     const onTimePreset = global.getCircadianPreset(preset)
     const tempAndBright = onTimePreset[hours]
-    const nextTempAndBright = hours < 23 ? onTimePreset[hours + 1] : onTimePreset[hours];
+    const nextTempAndBright = hours < 23 ? onTimePreset[hours + 1] : onTimePreset[0];
 
     var temp = tempAndBright[0] + ((nextTempAndBright[0] - tempAndBright[0]) / MINUTES_IN_HOUR * minute)
     var bright = tempAndBright[1] + ((nextTempAndBright[1] - tempAndBright[1]) / MINUTES_IN_HOUR * minute)
@@ -24,7 +24,6 @@ function getCircadianLight(preset) {
     //if (CIRCADIAN_LIGHT_DEBUG) console.info("Циркадное освещение. Получение. Время {}:{}. Режим {}. Температура {} и яркость {}", hours, minute, preset, temp, bright)
     return [temp, bright];
 }
-
 
 function setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate) {
 
@@ -96,14 +95,16 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
         console.info(text)
     }
 
-    if (allowTemperatureChange) {
+    if (allowTemperatureChange && temperature.getValue() != temp)
         temperature.setValue(temp);
-    } else {
-        if (allowHueChange) hue.setValue(hueAndSaturation[0])
-        if (allowSaturationChange) saturation.setValue(hueAndSaturation[1])
+    else {
+        if (allowHueChange && hue.getValue() != hueAndSaturation[0])
+            hue.setValue(hueAndSaturation[0])
+        if (allowSaturationChange && saturation.getValue() != hueAndSaturation[1])
+            saturation.setValue(hueAndSaturation[1])
     }
 
-    if (allowBrightChange)
+    if (allowBrightChange && brightness.getValue() != bright)
         brightness.setValue(bright)
 }
 
@@ -145,12 +146,29 @@ function getHueAndSaturationFromMired(mired) {
     }
 }
 
-function resetCircadianLight(service) {
-    GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true
+function getCircadianLightServiceName(service) {
+    const acc = service.getAccessory();
+    const room = acc.getRoom().getName()
+    const accName = service.getAccessory().getName()
+    const sName = service.getName()
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " ("+service.getUUID()+")"
+    return name
 }
 
-function setCircadianLightDisabled(service, disabled) {
-    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = disabled
+function getCircadianLightModes() {
+    let cList = [];
+    let onTime = global.onTime
+    let keys = Object.keys(global.onTime);
+    let defaultNames = {0: "Дольше яркий", 1: "Раннее затемнение", 2: "Всегда полная яркость"}
+
+    keys.forEach(function (key) {
+        let name = onTime[key].name ? onTime[key].name : key.toString() + " ("+defaultNames[key]+")"
+        cList.push({
+            name: { ru: name, en: name },
+            value: parseInt(key)
+        });
+    })
+    return cList
 }
 
 function getCircadianLightGlobalVariableForReset(service) {
@@ -161,11 +179,28 @@ function getCircadianLightGlobalVariableForDisable(service) {
     return "CircadianLight_" + service.getUUID() + "_disabled"
 }
 
-function getCircadianLightServiceName(service) {
-    const acc = service.getAccessory();
-    const room = acc.getRoom().getName()
-    const accName = service.getAccessory().getName()
-    const sName = service.getName()
-    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName)
-    return name
+
+// Функции для управления циркадным режимом из своих сценариев
+function resetCircadianLight(service) {
+    GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true
+}
+
+function setCircadianLightDisabled(service, disabled) {
+    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = disabled
+}
+
+function setCircadianLightEnabled(service, enabled) {
+    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = !enabled
+}
+
+function disableCircadianLightFor(service) {
+    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = true
+}
+
+function enableCircadianLightFor(service) {
+    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = false
+}
+
+function resetCircadianLightFor(service) {
+    GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true
 }

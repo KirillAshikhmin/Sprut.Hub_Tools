@@ -1,8 +1,12 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "4.0",
+  version: "4.1",
   author: "@BOOMikru",
+
+  active: true,
+  onStart: true,
+  sync: true,
 
   sourceServices: [HS.Lightbulb],
   sourceCharacteristics: [HC.On, HC.Brightness, HC.ColorTemperature, HC.Hue, HC.Saturation],
@@ -104,10 +108,9 @@ info = {
 }
 
 
-function trigger(source, value, variables, options, path) {
+function trigger(source, value, variables, options, context) {
   const service = source.getService()
   const isOn = source.getType() == HC.On
-
 
   // Проверка выключения и сброса
   const disableName = global.getCircadianLightGlobalVariableForDisable(service)
@@ -138,9 +141,12 @@ function trigger(source, value, variables, options, path) {
 
         if (GlobalVariables[resetName] == true) {
           GlobalVariables[resetName] = false
+          debug("==== СБРОС ==== Циркадный режим восстановлен для {}", source, options)
           reset(variables)
-          setCircadianValue(source.getService(), variables, options)
-          restartCron(source, variables, options)
+          if (service.getCharacteristic(HC.On).getValue()) {
+            setCircadianValue(source.getService(), variables, options)
+            restartCron(source, variables, options)
+          }
         }
       }, 1000)
     } else {
@@ -154,15 +160,15 @@ function trigger(source, value, variables, options, path) {
   if (GlobalVariables[disableName] == true) return
 
   // Проверка способа включения
-  if (contain(path, "Lightbulb.Brightness")) {
+  if (contain(context, "Lightbulb.Brightness")) {
     variables.startParameter.isTurnOnByBright = true
     variables.startParameter.brightAtStart = service.getCharacteristic(HC.Brightness).getValue()
-  } else if (contain(path, "Lightbulb.ColorTemperature")) {
+  } else if (contain(context, "Lightbulb.ColorTemperature")) {
     variables.startParameter.isTurnOnByTemp = true
-  } else if (contain(path, "Lightbulb.Saturation")) {
+  } else if (contain(context, "Lightbulb.Saturation")) {
     variables.startParameter.isTurnOnByTemp = true
     variables.startParameter.isTurnOnBySat = true
-  } else if (contain(path, "Lightbulb.Hue")) {
+  } else if (contain(context, "Lightbulb.Hue")) {
     variables.startParameter.isTurnOnByTemp = true
     variables.startParameter.isTurnOnByHue = true
   }
@@ -251,7 +257,7 @@ function trigger(source, value, variables, options, path) {
       let installStartHue = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.startParameter.isTurnOnByHue && !variables.changed.temp
       let installStartSat = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.startParameter.isTurnOnBySat && !variables.changed.temp
 
-      if (installStartBright) {
+      if (installStartBright || installStartTemp || installStartHue || installStartSat) {
         global.setCircadianLightForService(service, options.Preset, !installStartBright, !installStartTemp, !installStartHue, !installStartSat);
       }
 

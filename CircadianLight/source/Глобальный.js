@@ -151,7 +151,7 @@ function getCircadianLightServiceName(service) {
     const room = acc.getRoom().getName()
     const accName = service.getAccessory().getName()
     const sName = service.getName()
-    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " ("+service.getUUID()+")"
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")"
     return name
 }
 
@@ -159,16 +159,23 @@ function getCircadianLightModes() {
     let cList = [];
     let onTime = global.onTime
     let keys = Object.keys(global.onTime);
-    let defaultNames = {0: "Дольше яркий", 1: "Раннее затемнение", 2: "Всегда полная яркость"}
+    let defaultNames = { 0: "Дольше яркий", 1: "Раннее затемнение", 2: "Всегда полная яркость" }
 
     keys.forEach(function (key) {
-        let name = onTime[key].name ? onTime[key].name : key.toString() + " ("+defaultNames[key]+")"
+        let name = onTime[key].name ? onTime[key].name : key.toString() + " (" + defaultNames[key] + ")"
         cList.push({
             name: { ru: name, en: name },
             value: parseInt(key)
         });
     })
     return cList
+}
+
+function toArray(items) {
+    if (!Array.isArray(items)) {
+        items = [items];
+    }
+    return items
 }
 
 function getCircadianLightGlobalVariableForReset(service) {
@@ -193,14 +200,14 @@ function setCircadianLightEnabled(service, enabled) {
     GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = !enabled
 }
 
-function disableCircadianLightFor(service) {
-    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = true
+function disableCircadianLightFor(services) {
+    toArray(services).forEach(function (service) { GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = true; })
 }
 
-function enableCircadianLightFor(service) {
-    GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = false
+function enableCircadianLightFor(services) {
+    toArray(services).forEach(function (service) { GlobalVariables[getCircadianLightGlobalVariableForDisable(service)] = false; })
 }
 
-function resetCircadianLightFor(service) {
-    GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true
+function resetCircadianLightFor(services) {
+    toArray(services).forEach(function (service) { GlobalVariables[getCircadianLightGlobalVariableForReset(service)] = true; })
 }

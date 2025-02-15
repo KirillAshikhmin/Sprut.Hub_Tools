@@ -118,14 +118,13 @@ function trigger(source, value, variables, options, context) {
   const resetName = global.getCircadianLightGlobalVariableForReset(source.getService())
   variables.reset.name = resetName
 
-  if (isOn && value) {
+  if (isOn) {
     if (value) {
       GlobalVariables[resetName] = false
 
       variables.reset.task = setInterval(function () {
         // Выключили, останавливаем
         if (GlobalVariables[disableName] == true && variables.disabled != true) {
-
           debug("==== ОТКЛЮЧЕНИЕ ==== Циркадный режим отключен для {}", source, isDebug)
           variables.disabled = true
           reset(variables)
@@ -159,7 +158,6 @@ function trigger(source, value, variables, options, context) {
   }
 
   if (GlobalVariables[disableName] == true) return
-
 
   // Проверка способа включения
   if (isOn && value) {
@@ -245,8 +243,10 @@ function trigger(source, value, variables, options, context) {
       stop(source, variables, options)
       return
     }
-  } else {
+  }
 
+  // Основная логика
+  if (isOn) {
     if (value) {
       const brightness = source.getService().getCharacteristic(HC.Brightness);
       if (brightness == null) {
@@ -292,17 +292,14 @@ function trigger(source, value, variables, options, context) {
             variables.smoothOn.task = interval
           }
         }, 300);
-      } else {
-        brightCharacteristic.setValue(target)
       }
 
       restartCron(source, variables, options)
-
     } else {
       reset(variables)
       stop(source, variables, options)
 
-      if (variables.reset.task != undefined) {
+      if (variables.reset.task) {
         variables.reset.task.clear()
         variables.reset.task = undefined
       }
@@ -349,7 +346,7 @@ function stop(source, variables, options) {
     variables.cronTask.clear()
     variables.cronTask = undefined;
   }
-  debug("==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", source, options.isDebug)
+  debug("==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", source, options.Debug)
 }
 
 // Сбрасываем состояние при выключении

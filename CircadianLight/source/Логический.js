@@ -1,12 +1,12 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "4.1",
+  version: "4.2",
   author: "@BOOMikru",
 
   active: true,
   onStart: true,
-  sync: true,
+  sync: false,
 
   sourceServices: [HS.Lightbulb],
   sourceCharacteristics: [HC.On, HC.Brightness, HC.ColorTemperature, HC.Hue, HC.Saturation],
@@ -111,6 +111,7 @@ info = {
 function trigger(source, value, variables, options, context) {
   const service = source.getService()
   const isOn = source.getType() == HC.On
+  const isDebug = options.Debug
 
   // Проверка выключения и сброса
   const disableName = global.getCircadianLightGlobalVariableForDisable(service)
@@ -125,7 +126,7 @@ function trigger(source, value, variables, options, context) {
         // Выключили, останавливаем
         if (GlobalVariables[disableName] == true && variables.disabled != true) {
 
-          debug("==== ОТКЛЮЧЕНИЕ ==== Циркадный режим отключен для {}", source, options)
+          debug("==== ОТКЛЮЧЕНИЕ ==== Циркадный режим отключен для {}", source, isDebug)
           variables.disabled = true
           reset(variables)
           stop(source, variables, options)
@@ -133,7 +134,7 @@ function trigger(source, value, variables, options, context) {
         }
         // Включили, возобновляем работу
         if (GlobalVariables[disableName] == false && variables.disabled == true) {
-          debug("==== ВКЛЮЧЕНИЕ ==== Циркадный режим включен для {}", source, options)
+          debug("==== ВКЛЮЧЕНИЕ ==== Циркадный режим включен для {}", source, isDebug)
           variables.disabled = false
           // Включили, надо и перезапустить
           GlobalVariables[resetName] = true
@@ -141,7 +142,7 @@ function trigger(source, value, variables, options, context) {
 
         if (GlobalVariables[resetName] == true) {
           GlobalVariables[resetName] = false
-          debug("==== СБРОС ==== Циркадный режим восстановлен для {}", source, options)
+          debug("==== СБРОС ==== Циркадный режим восстановлен для {}", source, isDebug)
           reset(variables)
           if (service.getCharacteristic(HC.On).getValue()) {
             setCircadianValue(source.getService(), variables, options)
@@ -159,18 +160,25 @@ function trigger(source, value, variables, options, context) {
 
   if (GlobalVariables[disableName] == true) return
 
+
   // Проверка способа включения
-  if (contain(context, "Lightbulb.Brightness")) {
-    variables.startParameter.isTurnOnByBright = true
-    variables.startParameter.brightAtStart = service.getCharacteristic(HC.Brightness).getValue()
-  } else if (contain(context, "Lightbulb.ColorTemperature")) {
-    variables.startParameter.isTurnOnByTemp = true
-  } else if (contain(context, "Lightbulb.Saturation")) {
-    variables.startParameter.isTurnOnByTemp = true
-    variables.startParameter.isTurnOnBySat = true
-  } else if (contain(context, "Lightbulb.Hue")) {
-    variables.startParameter.isTurnOnByTemp = true
-    variables.startParameter.isTurnOnByHue = true
+  if (isOn && value) {
+    if (contain(context, "Lightbulb.Brightness")) {
+      debug("Включается через изменение яркости. {}", source, isDebug)
+      variables.startParameter.isTurnOnByBright = true
+      variables.startParameter.brightAtStart = service.getCharacteristic(HC.Brightness).getValue()
+    } else if (contain(context, "Lightbulb.ColorTemperature")) {
+      debug("Включается через изменение температуры. {}", source, isDebug)
+      variables.startParameter.isTurnOnByTemp = true
+    } else if (contain(context, "Lightbulb.Saturation")) {
+      debug("Включается через изменение насыщенности. {}", source, isDebug)
+      variables.startParameter.isTurnOnByTemp = true
+      variables.startParameter.isTurnOnBySat = true
+    } else if (contain(context, "Lightbulb.Hue")) {
+      debug("Включается через изменение оттенки. {}", source, isDebug)
+      variables.startParameter.isTurnOnByTemp = true
+      variables.startParameter.isTurnOnByHue = true
+    }
   }
 
 
@@ -221,19 +229,19 @@ function trigger(source, value, variables, options, context) {
       }
     }
 
-    if (isBright && variables.changed.bright) debug("Яркость изменена вручную. Больше меняться автоматически не будет для {}", source, options)
-    if (isTemp && variables.changed.temp) debug("Температура изменена вручную. Больше меняться автоматически не будет для {}", source, options)
-    if (isHue && variables.changed.hue) debug("Оттенок изменен вручную. Больше меняться автоматически не будет для {}", source, options)
-    if (isSaturation && variables.changed.sat) debug("Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", source, options)
+    if (isBright && variables.changed.bright) debug("Яркость изменена вручную. Больше меняться автоматически не будет для {}", source, isDebug, context)
+    if (isTemp && variables.changed.temp) debug("Температура изменена вручную. Больше меняться автоматически не будет для {}", source, isDebug, context)
+    if (isHue && variables.changed.hue) debug("Оттенок изменен вручную. Больше меняться автоматически не будет для {}", source, isDebug, context)
+    if (isSaturation && variables.changed.sat) debug("Насыщенность изменена вручную. Больше меняться автоматически не будет для {}", source, isDebug, context)
 
     if (variables.cronTask && variables.changed.bright && (variables.changed.temp || (variables.changed.hue && variables.changed.sat))) {
-      debug("Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", source, options)
+      debug("Все параметры, которые могли меняться в циркадном режиме изменены и больше не будут меняться. Останавливаем циркакадный режим для {}", source, isDebug)
       stop(source, variables, options)
       return
     }
 
     if (options.StopCircadionAfterChangeParam && variables.cronTask && (variables.changed.bright || variables.changed.temp || variables.changed.hue || variables.changed.sat)) {
-      debug("Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", source, options)
+      debug("Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен для {}", source, isDebug)
       stop(source, variables, options)
       return
     }
@@ -242,7 +250,7 @@ function trigger(source, value, variables, options, context) {
     if (value) {
       const brightness = source.getService().getCharacteristic(HC.Brightness);
       if (brightness == null) {
-        console.error(DEBUG_TITLE + "Лампочка {}, не умеет изменять яркость", source, options)
+        console.error(DEBUG_TITLE + "Лампочка {}, не умеет изменять яркость", source, isDebug)
         return;
       }
 
@@ -332,7 +340,7 @@ function restartCron(source, variables, options) {
   });
 
   variables.cronTask = task;
-  debug("==== ЗАПУСК ==== Циркадный режим запущен для {}", source, options)
+  debug("==== ЗАПУСК ==== Циркадный режим запущен для {}", source, options.Debug)
 }
 
 function stop(source, variables, options) {
@@ -341,7 +349,7 @@ function stop(source, variables, options) {
     variables.cronTask.clear()
     variables.cronTask = undefined;
   }
-  debug("==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", source, options)
+  debug("==== ОСТАНОВКА ==== Циркадный режим остановлен для {}", source, options.isDebug)
 }
 
 // Сбрасываем состояние при выключении
@@ -370,9 +378,12 @@ function contain(source, substring) {
   return source.toString().indexOf(substring) !== -1
 }
 
-function debug(format, source, options) {
-  if (options.Debug)
-    console.info(format, global.getCircadianLightServiceName(source.getService()))
+function debug(format, source, isDebug, context) {
+  if (isDebug) {
+    console.info(DEBUG_TITLE + format, global.getCircadianLightServiceName(source.getService()))
+    if (context)
+      console.info("{} Контекст изменения: {}", DEBUG_TITLE, context)
+  }
 }
 
 const DEBUG_TITLE = "Циркадное освещение. "

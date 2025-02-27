@@ -6,6 +6,8 @@
 - [Выключить весь свет](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/TurnOffAllLight "Выключить весь свет")
 - [Средняя температура и влажность в комнате](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/AverrageTempAndHum "Средняя температура и влажность в комнате")
 - [Скрыть устройство если выключено](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/HideIfTurnOn "Скрыть устройство если выключено")
+- [Пошаговое изменение характеристики по кнопке или датчику касания](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/StepChange "Пошаговое изменение характеристики по кнопке или датчику касания")
+- [Реле для термостата](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ThermostatRelay "Реле для термостата")
 
 ## Шаблоны:
 -

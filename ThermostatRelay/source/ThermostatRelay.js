@@ -140,7 +140,7 @@ Hub.getAccessories().forEach(function (a) {
     a.getServices(HS.Switch).forEach(function (s) {
         const c = s.getCharacteristic(HC.On);
         if (!c) return;
-        let displayname = global.getCircadianLightServiceName(s)
+        let displayname = getDeviceName(s)
         servicesListUnsort.push({
             name: { ru: displayname, en: displayname },
             value: s.getUUID()

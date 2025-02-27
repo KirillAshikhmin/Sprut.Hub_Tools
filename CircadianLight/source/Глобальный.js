@@ -4,9 +4,7 @@ const MAX_BRIGHTNESS = 100;
 const MIN_COLOR_TEMPERATURE = 50;
 const MAX_COLOR_TEMPERATURE = 400;
 const MINUTES_IN_HOUR = 60;
-
-const CIRCADIAN_LIGHT_DEBUG = false;
-const CIRCADIAN_LIGHT_DEBUG_INFO = false;
+const DEBUG_TITLE = "Циркадное освещение. "
 
 function getCircadianLight(preset) {
     const date = new Date()
@@ -21,12 +19,12 @@ function getCircadianLight(preset) {
     var bright = tempAndBright[1] + ((nextTempAndBright[1] - tempAndBright[1]) / MINUTES_IN_HOUR * minute)
     temp = Math.round(Math.max(MIN_COLOR_TEMPERATURE, Math.min(MAX_COLOR_TEMPERATURE, temp))) | 0;
     bright = Math.round(Math.max(MIN_BRIGHTNESS, Math.min(MAX_BRIGHTNESS, bright))) | 0;
-    //if (CIRCADIAN_LIGHT_DEBUG) console.info("Циркадное освещение. Получение. Время {}:{}. Режим {}. Температура {} и яркость {}", hours, minute, preset, temp, bright)
+    //console.info("Циркадное освещение. Получение. Время {}:{}. Режим {}. Температура {} и яркость {}", hours, minute, preset, temp, bright)
     return [temp, bright];
 }
 
-function setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate) {
-
+function setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, isDebug, isDebugAll) {
+    const debugPrefix = DEBUG_TITLE + global.getCircadianLightServiceName(service) + " "
 
     if (service.getType() != HS.Lightbulb) return;
 
@@ -35,68 +33,62 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     const bright = tempAndBright[1];
     let hueAndSaturation = [0, 0]
 
-    if (CIRCADIAN_LIGHT_DEBUG_INFO)
+    if (isDebug && isDebugAll)
         console.info(
-            "Циркадное освещение.  Режим: {}. Температура: {}. Яркость: {}, Не менять: яркость: {}, температуру: {}, оттенок: {}, насыщенность: {}. {}",
-            preset,
+            debugPrefix + "Запрос: Температура: {}. Яркость: {}, Не менять яркость: {}, температуру: {}, оттенок: {}, насыщенность: {}",
             temp,
             bright,
             dontChangeBright,
             dontChangeTemp,
             dontChangeHue,
-            dontChangeSaturate,
-            getCircadianLightServiceName(service)
+            dontChangeSaturate
         )
-
-    let allowTemperatureChange = !dontChangeTemp
-    let allowHueChange = !dontChangeHue
-    let allowSaturationChange = !dontChangeSaturate
-    let allowBrightChange = !dontChangeBright
 
     const brightness = service.getCharacteristic(HC.Brightness);
     if (brightness == null) {
-        console.warn("Циркадное освещение. Лампочка {}, не умеет изменять яркость", getCircadianLightServiceName(service))
+        console.warn(debugPrefix + "Лампочка {}, не умеет изменять яркость", getCircadianLightServiceName(service))
         return;
     }
 
     const temperature = service.getCharacteristic(HC.ColorTemperature);
-    if (temperature == null) {
-        allowTemperatureChange = false
-    }
-
     const hue = service.getCharacteristic(HC.Hue);
     const saturation = service.getCharacteristic(HC.Saturation);
-    if (hue == null || saturation == null) {
-        allowHueChange = hue != null
-        allowSaturationChange = saturation != null
-    } else {
+
+    let allowBrightChange = !dontChangeBright
+    let allowTemperatureChange = !dontChangeTemp && temperature != null
+    let allowHueChange = !dontChangeHue && hue != null
+    let allowSaturationChange = !dontChangeSaturate && saturation != null
+
+    if (allowHueChange || allowSaturationChange) {
         hueAndSaturation = getHueAndSaturationFromMired(temp)
     }
 
     if (!allowBrightChange && !allowTemperatureChange && !allowHueChange && !allowSaturationChange) {
-        console.warn("Циркадное освещение. Для лампочки {}, запрещено менять все параметры сценарием или свойствами", getCircadianLightServiceName(service))
+        console.warn(debugPrefix + "Для лампочки {}, запрещено менять все параметры сценарием или свойствами", getCircadianLightServiceName(service))
         return
     }
 
-    const bulb = service.getCharacteristic(HC.On);
-    bulb.setValue(true);
+    const onCharacteristic = service.getCharacteristic(HC.On);
+    onCharacteristic.setValue(true);
 
-    if (CIRCADIAN_LIGHT_DEBUG_INFO) {
-        const name = getCircadianLightServiceName(service)
-
-        var text = "Циркадное освещение. Установлено: "
-        if (allowTemperatureChange) text += " Температура " + temp + ";"
+    if (isDebug) {
+        var text = debugPrefix + "Установлено: "
         if (allowBrightChange) text += " Яркость " + bright + ";"
+        if (allowTemperatureChange) text += " Температура " + temp
         else {
-            if (allowHueChange) text += " Оттенок " + hueAndSaturation[0] + ";"
-            if (allowSaturationChange) text += " Насыщенность " + hueAndSaturation[1] + ";"
+            if (allowHueChange || allowSaturationChange) {
+                text += " Температура " + temp + " ("
+                if (allowHueChange) text += " Оттенок " + hueAndSaturation[0] 
+                if (allowSaturationChange) text += " Насыщенность " + hueAndSaturation[1]
+                text += ")"
+            }
         }
-        text += " " + name
         console.info(text)
     }
 
-    if (allowTemperatureChange && temperature.getValue() != temp)
-        temperature.setValue(temp);
+    if (allowTemperatureChange) {
+        if (temperature.getValue() != temp) temperature.setValue(temp)
+    }
     else {
         if (allowHueChange && hue.getValue() != hueAndSaturation[0])
             hue.setValue(hueAndSaturation[0])

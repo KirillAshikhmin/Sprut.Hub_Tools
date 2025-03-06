@@ -8,6 +8,7 @@
 - [Скрыть устройство если выключено](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/HideIfTurnOn "Скрыть устройство если выключено")
 - [Пошаговое изменение характеристики по кнопке или датчику касания](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/StepChange "Пошаговое изменение характеристики по кнопке или датчику касания")
 - [Реле для термостата](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ThermostatRelay "Реле для термостата")
+- [Отслеживание батарей и сводка по ним](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Battery "Отслеживание батарей и сводка по ним")
 
 ## Шаблоны:
 -

@@ -24,7 +24,7 @@ function getBatteriesInfo(fullInfo, blackList, whiteList) {
         let state = GlobalVariables["batteryStateScenario"][uuid]
         if (state == undefined) {
             const level = service.getCharacteristic(HC.BatteryLevel).getValue()
-            const charging = service.getCharacteristic(HC.ChargingState).getValue()
+            const charging = service.getCharacteristic(HC.ChargingState).getValue() == 1
             const lowBattery = service.getCharacteristic(HC.StatusLowBattery).getValue()
 
             state = {
@@ -35,13 +35,16 @@ function getBatteriesInfo(fullInfo, blackList, whiteList) {
                 model: accessory.getModel(),
                 level: level,
                 lowBattery: lowBattery,
-                charging: charging
+                charging: charging,
+                logicEnabled: false
             }
+        } else {
+            state.logicEnabled = true
         }
 
         if (state.lowBattery) withLowBattery.push(state)
         else normalBattery.push(state)
-        if (state.date == undefined) withoutLogic.push(state)
+        if (state.logicEnabled != true) withoutLogic.push(state)
         if (state.lowBattery && state.batteryType != undefined && state.batteryType != "") {
             let count = batteries[state.batteryType]
             if (count == undefined) count = state.quantity
@@ -56,9 +59,10 @@ function getBatteriesInfo(fullInfo, blackList, whiteList) {
     normalBattery = normalBattery.sort(function (a, b) { return a.room.localeCompare(b.room); })
     withoutLogic = withoutLogic.sort(function (a, b) { return a.room.localeCompare(b.room); })
 
+    let hasWithLowBattery = withLowBattery.length > 0
     if (global.sendToTelegram !== undefined) {
         let textArray = ["*🔋 Состояние батарей:*"]
-        if (withLowBattery.length > 0) {
+        if (hasWithLowBattery > 0) {
             textArray.push("❗️ *Разряжены:*")
             withLowBattery.forEach(function (state) {
                 formatStateToTg(textArray, state)
@@ -71,14 +75,16 @@ function getBatteriesInfo(fullInfo, blackList, whiteList) {
                     textArray.push(type + " " + batteries[type] + " шт.")
                 })
             }
+        } else {
+            if (!fullInfo) textArray.push("Все батареи заряжены")
         }
         if (fullInfo) {
-            if (normalBattery.length > 0 && withoutLogic.length > 0) {
+            if (normalBattery.length > 0 && withoutLogic.length > 0 && hasWithLowBattery) {
                 textArray.push("")
                 textArray.push("####################################")
+                textArray.push("")
             }
             if (normalBattery.length > 0) {
-                textArray.push("")
                 textArray.push("👌 *В норме:*")
                 normalBattery.forEach(function (state) {
                     formatStateToTg(textArray, state, true)
@@ -138,7 +144,7 @@ function formatStateToTg(textArray, state, compact, noShowLevel) {
         if (state.chargingType != undefined && state.chargingType != "" && state.chargingType != "-") textArray.push("Заряжается через: " + state.chargingType + " ")
         if (state.comment != undefined && state.comment != "") textArray.push(state.comment.trim())
         if (state.date != undefined) textArray.push("Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + state.date.replaceAll("-", "."))
-        else textArray.push("Логика не активирована")
+        if (state.logicEnabled != true) textArray.push("Логика не активирована")
         textArray.push("")
     }
 }

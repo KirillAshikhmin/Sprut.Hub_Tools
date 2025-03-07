@@ -6,9 +6,9 @@ let typesList = [];
 let chargingList = [];
 
 info = {
-    name: "Отслеживание батарей",
+    name: "BatteryMonitoring",
     description: "Позволяет получать уведомления, когда батарея разрядится. в уведомлении будет вся информация, указанная в параметрах. Обновления: https://t.me/smart_sputnik",
-    version: "1.0",
+    version: "1.1",
     author: "@BOOMikru",
     onStart: true,
 
@@ -81,6 +81,21 @@ info = {
             value: 20,
             unit: "%"
         },
+        changeName: {
+            name: {
+                en: "Change name to date",
+                ru: "Менять имя сервиса на дату замены батареи"
+            },
+            desc: {
+                en: "No replacement date, if disable",
+                ru: "Если отключено, то дата замены батареи\зарядки не будет сохраняться и отображаться"
+            },
+            type: "Boolean",
+            value: true
+        },
+    },
+    variables: {
+        notificationSend: false
     }
 }
 
@@ -96,14 +111,13 @@ function trigger(source, value, variables, options) {
         const uuid = accessory.getUUID()
         const quantity = options.quantity == undefined ? 1 : options.quantity
         const level = service.getCharacteristic(HC.BatteryLevel).getValue()
-        const charging = service.getCharacteristic(HC.ChargingState).getValue()
+        const charging = service.getCharacteristic(HC.ChargingState).getValue() == 1
         let lowBattery = false
         if (options.specificThreshold) {
             lowBattery = level <= options.threshold
         } else {
             lowBattery = service.getCharacteristic(HC.StatusLowBattery).getValue()
         }
-
 
         let states = GlobalVariables["batteryStateScenario"]
         if (!states) GlobalVariables["batteryStateScenario"] = []
@@ -132,43 +146,51 @@ function trigger(source, value, variables, options) {
             chargingType: options.chargingType,
             placement: options.placement,
             comment: options.comment,
-            date: date
+            date: options.changeName ? date : undefined,
+            logicEnabled: true,
+            changeName: options.changeName
         }
 
         GlobalVariables["batteryStateScenario"][uuid] = state
 
+
         if (lowBattery && !charging) {
 
-            let text = "❗️ Батарея разряжена! "
-            text += state.name + " в " + state.room + " (ID: " + state.uuid + ") "
-            if (state.placement != "") text += " " + state.placement.trim()
-            text += ". Заряд: " + state.level + "%"
-            if (state.batteryType != "") text += " Тип: " + state.batteryType + " (" + state.quantity + " шт.)"
-            if (state.chargingType != "") text += " Заряжается через: " + state.chargingType + " "
-            if (state.comment != "") text += state.comment.trim()
-            text += "Дата "+  (state.chargingType != "" ? "зарядки" : "замены батареи")+": " + date.replace("-",".")
+            if (!variables.notificationSend) {
+                variables.notificationSend = true
+                let text = "❗️ Батарея разряжена! "
+                text += state.name + " в " + state.room + " (ID: " + state.uuid + ") "
+                if (state.placement != "") text += " " + state.placement.trim()
+                text += ". Заряд: " + state.level + "%"
+                if (state.batteryType != "") text += " Тип: " + state.batteryType + " (" + state.quantity + " шт.)"
+                if (state.chargingType != "") text += " Заряжается через: " + state.chargingType + " "
+                if (state.comment != "") text += state.comment.trim()
+                text += "Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", ".")
 
-            Notify.text(text).send()
+                Notify.text(text).send()
 
-            if (global.sendToTelegram !== undefined) {
-                let textArray = ["❗️ *Батарея разряжена!*"]
-                textArray.push(state.name + " в " + state.room + " (ID: " + state.uuid + ")")
-                if (state.placement != "") textArray.push(state.placement.trim())
-                textArray.push("")
-                textArray.push("Заряд: " + state.level + "%")
-                if (state.batteryType != "" && state.batteryType != "-") textArray.push("Тип: " + state.batteryType + " (" + state.quantity + " шт.)")
-                if (state.chargingType != "" && state.chargingType != "-") textArray.push("Заряжается через: " + state.chargingType + " ")
-                textArray.push("")
-                if (state.comment != "") textArray.push(state.comment.trim())
-                textArray.push("Дата "+  (state.chargingType != "" ? "зарядки" : "замены батареи")+": " + date.replace("-","."))
+                if (global.sendToTelegram !== undefined) {
+                    let textArray = ["❗️ *Батарея разряжена!*"]
+                    textArray.push(state.name + " в " + state.room + " (ID: " + state.uuid + ")")
+                    if (state.placement != "") textArray.push(state.placement.trim())
+                    textArray.push("")
+                    textArray.push("Заряд: " + state.level + "%")
+                    if (state.batteryType != "" && state.batteryType != "-") textArray.push("Тип: " + state.batteryType + " (" + state.quantity + " шт.)")
+                    if (state.chargingType != "" && state.chargingType != "-") textArray.push("Заряжается через: " + state.chargingType + " ")
+                    textArray.push("")
+                    if (state.comment != "") textArray.push(state.comment.trim())
+                    textArray.push("Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", "."))
 
-
-                global.sendToTelegram(textArray);
+                    global.sendToTelegram(textArray);
+                }
             }
 
-            service.setName("❗️ " + date)
-        } else {
-            service.setName(date)
+            if (options.changeName) service.setName("❗️ " + date)
+        }
+
+        if (!lowBattery && !charging) {
+            if (options.changeName) service.setName(date)
+            variables.notificationSend = false
         }
     } catch (e) {
         log.error("Ошибка выполнения задачи: " + e.message);

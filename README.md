@@ -9,6 +9,7 @@
 - [Пошаговое изменение характеристики по кнопке или датчику касания](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/StepChange "Пошаговое изменение характеристики по кнопке или датчику касания")
 - [Реле для термостата](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ThermostatRelay "Реле для термостата")
 - [Отслеживание батарей и сводка по ним](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Battery "Отслеживание батарей и сводка по ним")
+- [Адаптер минимальной яркости ламп](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/MinBrightAdapter "Адаптер минимальной яркости ламп")
 
 ## Шаблоны:
 -

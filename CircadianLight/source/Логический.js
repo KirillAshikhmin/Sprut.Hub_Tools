@@ -1,7 +1,7 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "4.3",
+  version: "5.0",
   author: "@BOOMikru",
 
   active: true,
@@ -64,17 +64,17 @@ info = {
         { value: 2, name: { en: "Temperature", ru: "Только цветовую температуру" } }
       ]
     },
-    SmoothOn: {
+    SmoothOnTime: {
       name: {
-        en: "Smooth on",
-        ru: "Плавное изменение яркости при включении"
+        en: "Smooth on time (seconds)",
+        ru: "Время плавного включения (секунды)"
       },
       desc: {
-        en: "Experimental",
-        ru: "Экспериментально. Лучше использовать настройку у самой лампы, если есть."
+        en: "Time in seconds for smooth brightness transition when turning on. Set to 0 to disable. Experimental feature. It is better to use the lamp's built-in setting if available.",
+        ru: "Время в секундах для плавного изменения яркости при включении. Установите 0 для отключения. Экспериментальная функция. Лучше использовать встроенную настройку лампы, если она доступна."
       },
-      type: "Boolean",
-      value: false
+      type: "Integer",
+      value: 0,
     },
     Debug: {
       name: {
@@ -228,39 +228,27 @@ function trigger(source, value, variables, options, context) {
     // Если включено "Не менять яркость", и ещё не меняли
     if (options.DontChangeParam) {
 
+      let autoChange = isAutomaticChange(context)
+
       if (variables.startParameter.isTurnOnByBright) variables.changed.bright = true
       if (variables.startParameter.isTurnOnByTemp) variables.changed.temp = true
 
-      if (isBright && !variables.changed.bright && !variables.smoothOn.active) {
-        let circadianBright = global.getCircadianLight(options.Preset)[1]
-        let changed = difference(circadianBright, value) > 1
-        variables.changed.bright = changed
+      if (!autoChange && isBright && !variables.changed.bright && !variables.smoothOn.active) {
+        variables.changed.bright = true
       }
 
-      if (isTemp && !variables.changed.temp) {
-        let circadianTemp = global.getCircadianLight(options.Preset)[0]
-        let changed = difference(circadianTemp, value) > 1
-        variables.changed.temp = changed
+      if (!autoChange && isTemp && !variables.changed.temp) {
+        variables.changed.temp = true
       }
 
-      if (isHue && !variables.changed.hue) {
-        let circadianTemp = global.getCircadianLight(options.Preset)[0]
-        let hueAndSat = global.getHueAndSaturationFromMired(circadianTemp)
-        let changed = difference(hueAndSat[0], value) > 1
-        variables.changed.hue = changed
-        if (changed) {
-          variables.changed.temp = true
-        }
+      if (!autoChange && isHue && !variables.changed.hue) {
+        variables.changed.hue = true
+        variables.changed.temp = true
       }
 
-      if (isSaturation && !variables.changed.sat) {
-        let circadianTemp = global.getCircadianLight(options.Preset)[0]
-        let hueAndSat = global.getHueAndSaturationFromMired(circadianTemp)
-        let changed = difference(hueAndSat[1], value) > 1
-        variables.changed.sat = changed
-        if (changed) {
-          variables.changed.temp = true
-        }
+      if (!autoChange && isSaturation && !variables.changed.sat) {
+        variables.changed.sat = true
+        variables.changed.temp = true
       }
     }
 
@@ -330,27 +318,35 @@ function trigger(source, value, variables, options, context) {
         return
       }
 
+
       // Плавное включение
       let brightAtStart = variables.startParameter.brightAtStart
       let target = brightAtStart > 0 ? brightAtStart : circadianValue[1]
       let brightCharacteristic = service.getCharacteristic(HC.Brightness)
-      if (!variables.changed.bright && !variables.startParameter.isTurnOnByBright && enableBrightByWhatChange && options.SmoothOn && target > 1) {
-        variables.smoothOn.active = true
-        let currentBr = 1
-        brightCharacteristic.setValue(currentBr)
-        let increaseBy = (target / 15) | 0
-        let interval = setInterval(function () {
-          if (currentBr >= target || service.getCharacteristic(HC.On).getValue()) {
-            interval.clear()
-            interval = undefined
-            variables.smoothOn.active = false
-          }
-          currentBr = Math.min(currentBr + increaseBy, target)
-          brightCharacteristic.setValue(currentBr)
-        }, 150)
-        variables.smoothOn.task = interval
-      }
+      let smoothTime = options.SmoothOnTime || 0;  // Время плавного включения, по умолчанию 0
+      if (!variables.changed.bright && !variables.startParameter.isTurnOnByBright && enableBrightByWhatChange && smoothTime > 0 && target > 1) {
+        variables.smoothOn.active = true;
+        let currentBr = 1;  // Начальная яркость — 1%
+        brightCharacteristic.setValue(currentBr);
 
+        let intervalMs = 100;  // Интервал обновления — 100 мс
+        let steps = (smoothTime * 1000) / intervalMs;  // Количество шагов
+        let increaseBy = (target - currentBr) / steps;  // Шаг увеличения яркости
+
+        let interval = setInterval(function () {
+          if (currentBr >= target || !service.getCharacteristic(HC.On).getValue()) {
+            clearInterval(interval);
+            interval = undefined
+            variables.smoothOn.active = false;
+            if (currentBr >= target) brightCharacteristic.setValue(target);
+          } else {
+            currentBr += increaseBy;
+            currentBr = Math.min(currentBr, target);
+            brightCharacteristic.setValue(Math.round(currentBr));
+          }
+        }, intervalMs);
+        variables.smoothOn.task = interval;
+      }
       restartCron(source, variables, options)
     } else {
       stop(source, variables, options)
@@ -437,6 +433,31 @@ function difference(a, b) {
 
 function contain(source, substring) {
   return source.toString().indexOf(substring) !== -1
+}
+
+function isAutomaticChange(context) {
+  // Разделяем контекст на элементы по символу '<-'
+  const elements = context.toString().split(' <- ')//.map(function(el) { el.trim() });
+  // Проверяем, есть ли элементы в массиве
+  if (elements.length === 0) {
+    return false;
+  }
+
+  // Условие 1: Последний элемент начинается с 'CLINK'
+  if (elements[elements.length - 1].startsWith('CLINK')) {
+    return true;
+  }
+
+  // Условие 2: Первые три элемента соответствуют шаблону 'LOGIC <- C <- LOGIC'
+  if (elements.length >= 3 &&
+    elements[0].startsWith('LOGIC') &&
+    elements[1].startsWith('C') &&
+    elements[2].startsWith('LOGIC')) {
+    return true;
+  }
+
+  // Если условия не выполнены, изменение ручное
+  return false;
 }
 
 function debug(format, source, isDebug, arg, context) {

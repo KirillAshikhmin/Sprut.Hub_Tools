@@ -341,20 +341,10 @@ function getLamp(options, i) {
     return service
 }
 
-function getDeviceName(service) {
-    const acc = service.getAccessory();
-    const room = acc.getRoom().getName()
-    const accName = service.getAccessory().getName()
-    const sName = service.getName()
-    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")"
-    return name
-}
-
 let servicesListUnsort = [];
-servicesListUnsort
 // подготовка списка характеристик для выбора в настройке логики
 Hub.getAccessories().forEach(function (a) {
-    a.getServices(HS.Lightbulb).forEach(function (s) {
+    a.getServices().filter(function (s) {return s.getType() == HS.Lightbulb}).forEach(function (s) {
         const c = s.getCharacteristic(HC.Brightness);
         if (!c) return;
         let displayname = global.getCircadianLightServiceName(s)

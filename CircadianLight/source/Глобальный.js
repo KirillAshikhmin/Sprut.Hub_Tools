@@ -1,3 +1,5 @@
+const VERSION = "5.0"
+
 // Константы для улучшения читаемости
 const MIN_BRIGHTNESS = 1;
 const MAX_BRIGHTNESS = 100;
@@ -58,6 +60,7 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     let allowTemperatureChange = !dontChangeTemp && temperature != null
     let allowHueChange = !dontChangeHue && hue != null
     let allowSaturationChange = !dontChangeSaturate && saturation != null
+    let canTemperatureChange = temperature != null
 
     if (allowHueChange || allowSaturationChange) {
         hueAndSaturation = getHueAndSaturationFromMired(temp)
@@ -74,11 +77,13 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
     if (isDebug) {
         var text = debugPrefix + "Установлено: "
         if (allowBrightChange) text += " Яркость " + bright + ";"
-        if (allowTemperatureChange) text += " Температура " + temp
+        if (canTemperatureChange) {
+            if (allowTemperatureChange) text += " Температура " + temp
+        }
         else {
             if (allowHueChange || allowSaturationChange) {
                 text += " Температура " + temp + " ("
-                if (allowHueChange) text += " Оттенок " + hueAndSaturation[0] 
+                if (allowHueChange) text += " Оттенок " + hueAndSaturation[0]
                 if (allowSaturationChange) text += " Насыщенность " + hueAndSaturation[1]
                 text += ")"
             }
@@ -86,10 +91,9 @@ function setCircadianLightForService(service, preset, dontChangeBright, dontChan
         console.info(text)
     }
 
-    if (allowTemperatureChange) {
-        if (temperature.getValue() != temp) temperature.setValue(temp)
-    }
-    else {
+    if (canTemperatureChange) {
+        if (allowTemperatureChange && temperature.getValue() != temp) temperature.setValue(temp)
+    } else {
         if (allowHueChange && hue.getValue() != hueAndSaturation[0])
             hue.setValue(hueAndSaturation[0])
         if (allowSaturationChange && saturation.getValue() != hueAndSaturation[1])
@@ -151,7 +155,19 @@ function getCircadianLightModes() {
     let cList = [];
     let onTime = global.onTime
     let keys = Object.keys(global.onTime);
-    let defaultNames = { 0: "Дольше яркий", 1: "Раннее затемнение", 2: "Всегда полная яркость" }
+    let defaultNames = {
+        0: "Дольше яркий",
+        1: "Раннее затемнение",
+        2: "Всегда полная яркость",
+        3: "Режим 3 (Кастомный)",
+        4: "Режим 4 (Кастомный)",
+        5: "Режим 5 (Кастомный)",
+        6: "Режим 6 (Кастомный)",
+        7: "Режим 7 (Кастомный)",
+        8: "Режим 8 (Кастомный)",
+        9: "Режим 9 (Кастомный)",
+        10: "Режим 10 (Кастомный)",
+    }
 
     keys.forEach(function (key) {
         let name = onTime[key].name ? onTime[key].name : key.toString() + " (" + defaultNames[key] + ")"
@@ -160,6 +176,18 @@ function getCircadianLightModes() {
             value: parseInt(key)
         });
     })
+    let defaultKeys = Object.keys(defaultNames)
+    if (cList.length < defaultKeys.length) {
+        for (let i = 0; i < defaultKeys.length; i++) {
+            if ((cList.length - 1) < i) {
+                let name = defaultNames[i]
+                cList.push({
+                    name: { ru: name, en: name },
+                    value: i
+                });
+            }
+        }
+    }
     return cList
 }
 

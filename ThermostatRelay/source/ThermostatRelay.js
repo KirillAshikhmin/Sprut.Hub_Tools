@@ -129,7 +129,7 @@ function getDeviceName(service) {
     const room = acc.getRoom().getName()
     const accName = service.getAccessory().getName()
     const sName = service.getName()
-    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")"
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")" + (!service.isVisible() ? ". Скрыт" : "")
     return name
 }
 
@@ -137,7 +137,7 @@ let servicesListUnsort = [];
 servicesListUnsort
 // подготовка списка характеристик для выбора в настройке логики
 Hub.getAccessories().forEach(function (a) {
-    a.getServices(HS.Switch).forEach(function (s) {
+    a.getServices().filter(function (s) { return s.getType() == HS.Switch }).forEach(function (s) {
         const c = s.getCharacteristic(HC.On);
         if (!c) return;
         let displayname = getDeviceName(s)

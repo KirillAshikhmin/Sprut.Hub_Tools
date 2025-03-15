@@ -62,14 +62,22 @@ function trigger(source, value, variables, options) {
     }
 }
 
+function getDeviceName(service) {
+    const acc = service.getAccessory();
+    const room = acc.getRoom().getName()
+    const accName = service.getAccessory().getName()
+    const sName = service.getName()
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")" + (!service.isVisible() ? ". Скрыта" : "")
+    return name
+}
 
 let servicesListUnsort = [];
 // подготовка списка характеристик для выбора в настройке логики
 Hub.getAccessories().forEach(function (a) {
-    a.getServices(HS.Lightbulb).forEach(function (s) {
+    a.getServices().filter(function (s) { return s.getType() == HS.Lightbulb }).forEach(function (s) {
         const c = s.getCharacteristic(HC.Brightness);
         if (!c) return;
-        let displayname = global.getCircadianLightServiceName(s)
+        let displayname = getDeviceName(s)
         servicesListUnsort.push({
             name: { ru: displayname, en: displayname },
             value: s.getUUID()

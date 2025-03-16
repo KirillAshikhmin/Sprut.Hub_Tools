@@ -442,9 +442,10 @@ function isAutomaticChange(context) {
   if (elements.length === 0) {
     return false;
   }
+  let last = elements[elements.length - 1]
 
   // Условие 1: Последний элемент начинается с 'CLINK'
-  if (elements[elements.length - 1].startsWith('CLINK')) {
+  if (last.startsWith('CLINK') || last.startsWith('HUB[OnStart]')) {
     return true;
   }
 

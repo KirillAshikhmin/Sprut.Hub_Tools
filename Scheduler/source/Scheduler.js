@@ -1,50 +1,28 @@
 info = {
-  name: "Планировщик расширенный",
+  name: "📅 Планировщик расширенный",
   description: "Включает выключатель в заданное время в указанные дни месяца и/или дни недели. Обновления в канале https://t.me/smart_sputnik",
-  version: "1.0",
+  version: "1.1",
   author: "@BOOMikru",
-  active: true,
   onStart: true,
-  sync: false,
-  sourceServices: [HS.Switch],
-  sourceCharacteristics: [HC.On],
+  sourceServices: [
+    HS.Switch, HS.Outlet, HS.Fan, HS.FanBasic, HS.Lightbulb,
+    HS.Faucet, HS.C_PetFeeder, HS.Valve, HS.HeaterCooler, HS.AirPurifier,
+    HS.IrrigationSystem, HS.Television, HS.HumidifierDehumidifier, HS.CameraControl
+  ],
+  sourceCharacteristics: [HC.On, HC.Active],
 
   options: {
-    Time: {
-      name: {
-        en: "Time (HH:MM)",
-        ru: "Время (ЧЧ:ММ)"
-      },
-      desc: {
-        en: "Time to turn on in 24-hour format. Restart the script via 'Active' toggle after changing.",
-        ru: "Время включения в 24-часовом формате.\nПосле изменения времени перезапустите сценарий через переключатель 'Активно'."
-      },
-      type: "String",
-      value: "00:00"
-    },
     DaysOfMonth: {
       name: {
         en: "Days of month",
         ru: "Дни месяца"
       },
       desc: {
-        en: "Days of the month to activate (e.g., '1' or '15; 30'). Leave empty to ignore.",
-        ru: "Числа месяца для включения (например, '1' или '15; 30').\nОставьте пустым, чтобы игнорировать."
+        en: "Days of the month to activate (e.g., '1', '15, 30' or '1-5').\nActivation occurs on selected weekdays and specified days. If neither days nor weekdays are set, no activation happens.",
+        ru: "Числа месяца для включения (например, '1', '15, 30' или '1-5').\nВключение происходит по выбранным дням недели и указанным числам. Если не указать числа и дни недели, включение не произойдёт."
       },
       type: "String",
       value: ""
-    },
-    ActiveMonths: {
-      name: {
-        en: "Active months",
-        ru: "Активные месяцы"
-      },
-      desc: {
-        en: "Months when the switch should activate (e.g., '1' or '1, 6; 12'). Default is all months.",
-        ru: "Месяцы, когда выключатель должен включаться (например, '1' или '1, 6; 12').\nПо умолчанию все месяцы."
-      },
-      type: "String",
-      value: "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
     },
     Monday: {
       name: {
@@ -102,14 +80,38 @@ info = {
       type: "Boolean",
       value: false
     },
-    AutoTurnOff: {
+    ActiveMonths: {
       name: {
-        en: "Turn off automatically",
-        ru: "Автоматически выключать"
+        en: "Active months",
+        ru: "Активные месяцы"
       },
       desc: {
-        en: "If enabled, the switch turns off 1 second after being turned on.",
-        ru: "Если включено, выключатель выключается через 1 секунду после включения."
+        en: "Months when the device should activate (e.g., '1', '1, 6, 12' or '6-8').\nBy default every month.",
+        ru: "Месяцы, когда устройство должно включаться (например, '1', '1, 6, 12' или '6-8').\nПо умолчанию каждый месяц."
+      },
+      type: "String",
+      value: ""
+    },
+    Time: {
+      name: {
+        en: "Time (HH:MM)",
+        ru: "Время (ЧЧ:ММ)"
+      },
+      desc: {
+        en: "Time when activation occurs. Midnight by default.\nTime to turn on in 24-hour format. Restart the script via 'Active' toggle after changing.",
+        ru: "Время, в которое произойдёт включение. По умолчанию в полночь.\nПосле изменения времени перезапустите сценарий через переключатель 'Активно'."
+      },
+      type: "String",
+      value: "00:00"
+    },
+    DontTurnOff: {
+      name: {
+        en: "Don't turn off automatically",
+        ru: "Не отключать автоматически"
+      },
+      desc: {
+        en: "If enabled, the device will only turn on without automatic turning off.",
+        ru: "Если включено, устройство будет только включаться без автоматического отключения."
       },
       type: "Boolean",
       value: false
@@ -120,23 +122,65 @@ info = {
         ru: "Время отключения (ЧЧ:ММ)"
       },
       desc: {
-        en: "Time to turn off in 24-hour format. Restart the script via 'Active' toggle after changing.",
-        ru: "Время отключения в 24-часовом формате.\nПосле изменения времени перезапустите сценарий через переключатель 'Активно'."
+        en: "Time to turn off the switch. Midnight by default.\nIf turn-on and turn-off times match, it may not turn off if the next day meets the conditions.\nWill not turn off if 'Don't turn off' is enabled.",
+        ru: "Время отключения выключателя. По умолчанию полночь.\nЕсли время включения и отключения совпадает, то может не отключиться, если следующий день подходит под условия.\nНе отключится, если включено 'Не отключать'."
       },
       type: "String",
-      value: "00:00"
+      value: ""
+    },
+    TurnOffDelay: {
+      name: {
+        en: "Turn off delay (seconds)",
+        ru: "Задержка отключения (секунды)"
+      },
+      desc: {
+        en: "Delay in seconds before turning off after activation. Set to 0 to disable automatic turn-off.\nWill not turn off if 'Don't turn off' is enabled.",
+        ru: "Задержка в секундах перед отключением после включения. Установите 0, чтобы отключить автоматическое отключение.\nНе отключится, если включено 'Не отключать'."
+      },
+      type: "Integer",
+      value: 0
     }
   },
   variables: {
     cronTask: undefined, // Задача для включения в указанное время
-    midnightTask: undefined, // Задача для выключения в указанное время
-    prevTime: undefined // Предыдущее значение options.Time
+    midnightTask: undefined, // Задача для отключения в указанное время или в полночь
+    prevTime: undefined, // Предыдущее значение options.Time
+    prevTurnOffTime: undefined // Предыдущее значение options.TurnOffTime
   }
 }
 
+function setDeviceValue(source, value) {
+  var isOnCharacteristic = source.getType() == HC.On;
+  var isActiveCharacteristic = source.getType() == HC.Active;
+  if (isOnCharacteristic) {
+    source.setValue(value);
+  } else if (isActiveCharacteristic) {
+    source.setValue(value ? 1 : 0);
+  }
+}
+
+function parseRange(str) {
+  var result = [];
+  if (!str) return result; // Если строка пустая, возвращаем пустой массив
+  str.replace(/\s/g, "").split(/[,;]/).forEach(function(part) {
+    var range = part.split('-');
+    if (range.length === 2) {
+      var start = parseInt(range[0], 10);
+      var end = parseInt(range[1], 10);
+      if (start && end && start <= end) {
+        for (var i = start; i <= end; i++) result.push(i);
+      }
+    } else {
+      var num = parseInt(part, 10);
+      if (num) result.push(num);
+    }
+  });
+  return result.filter(function(num) { return num; });
+}
+
 function trigger(source, value, variables, options, context) {
-  // Проверяем, изменилось ли время в настройках
-  if (variables.prevTime !== options.Time) {
+  // Проверяем, изменилось ли время включения или отключения в настройках
+  if (variables.prevTime !== options.Time || variables.prevTurnOffTime !== options.TurnOffTime) {
     if (variables.cronTask) {
       variables.cronTask.clear();
       variables.cronTask = undefined;
@@ -145,13 +189,14 @@ function trigger(source, value, variables, options, context) {
       variables.midnightTask.clear();
       variables.midnightTask = undefined;
     }
-    variables.prevTime = options.Time; // Сохраняем новое значение времени
+    variables.prevTime = options.Time; // Сохраняем новое значение времени включения
+    variables.prevTurnOffTime = options.TurnOffTime; // Сохраняем новое значение времени отключения
   }
 
   // Если задачи уже запущены, ничего не делаем
   if (variables.cronTask) return;
 
-  // Валидация времени включения
+  // Валидация времени включения (Time)
   var time = options.Time || ""; // Если undefined, используем пустую строку
   var hours, minutes;
   var timeMatch = time.match(/^(\d{1,2}):(\d{1,2})$/); // Поддержка без ведущего нуля (например, "5:30")
@@ -172,29 +217,32 @@ function trigger(source, value, variables, options, context) {
   var minutesStr = minutes < 10 ? "0" + minutes : "" + minutes;
   time = hoursStr + ":" + minutesStr; // Формат "ЧЧ:ММ"
 
-  // Валидация времени отключения
+  // Валидация времени отключения (TurnOffTime)
   var turnOffTime = options.TurnOffTime || ""; // Если undefined, используем пустую строку
   var turnOffHours, turnOffMinutes;
-  var turnOffTimeMatch = turnOffTime.match(/^(\d{1,2}):(\d{1,2})$/); // Поддержка без ведущего нуля
+  var turnOffTimeMatch = turnOffTime.match(/^(\d{1,2}):(\d{1,2})$/);
   if (turnOffTimeMatch) {
-    turnOffHours = parseInt(turnOffTimeMatch[1], 10);
-    turnOffMinutes = parseInt(turnOffTimeMatch[2], 10);
+    turnOffHours = parseInt(timeMatch[1], 10);
+    turnOffMinutes = parseInt(timeMatch[2], 10);
     if (turnOffHours < 0 || turnOffHours > 23 || turnOffMinutes < 0 || turnOffMinutes > 59) {
       console.warn("Некорректное время отключения \"" + turnOffTime + "\" (часы: 0-23, минуты: 0-59), используется \"00:00\"");
       turnOffHours = 0;
       turnOffMinutes = 0;
     }
-  } else {
+  } else if (turnOffTime !== "") {
     console.warn("Некорректный формат времени отключения \"" + turnOffTime + "\", ожидается ЧЧ:ММ, используется \"00:00\"");
     turnOffHours = 0;
     turnOffMinutes = 0;
+  } else {
+    turnOffHours = 0;
+    turnOffMinutes = 0; // По умолчанию полночь, если не указано
   }
   var turnOffHoursStr = turnOffHours < 10 ? "0" + turnOffHours : "" + turnOffHours;
   var turnOffMinutesStr = turnOffMinutes < 10 ? "0" + turnOffMinutes : "" + turnOffMinutes;
   turnOffTime = turnOffHoursStr + ":" + turnOffMinutesStr; // Формат "ЧЧ:ММ"
 
-  // Валидация дней месяца
-  var daysOfMonth = options.DaysOfMonth.replace(/\s/g, "").split(/[,;]/).map(Number).filter(function(num) { return num; });
+  // Валидация дней месяца с поддержкой диапазонов
+  var daysOfMonth = parseRange(options.DaysOfMonth);
   daysOfMonth = daysOfMonth.filter(function(day) {
     if (day >= 1 && day <= 31) {
       return true;
@@ -204,8 +252,8 @@ function trigger(source, value, variables, options, context) {
     }
   });
 
-  // Валидация активных месяцев
-  var activeMonths = options.ActiveMonths.replace(/\s/g, "").split(/[,;]/).map(Number).filter(function(num) { return num; });
+  // Валидация активных месяцев с поддержкой диапазонов
+  var activeMonths = parseRange(options.ActiveMonths);
   activeMonths = activeMonths.filter(function(month) {
     if (month >= 1 && month <= 12) {
       return true;
@@ -236,32 +284,32 @@ function trigger(source, value, variables, options, context) {
     var isDayOfMonthMatch = daysOfMonth.length > 0 && daysOfMonth.indexOf(dayOfMonth) !== -1;
     var isDayOfWeekMatch = daysOfWeek[dayOfWeek];
 
+    // Если указаны только месяцы, но нет ни дней месяца, ни дней недели, включение не происходит
     if (isMonthMatch && (isDayOfMonthMatch || isDayOfWeekMatch)) {
-      source.setValue(true);
-      console.info("Выключатель включён в " + time + " для месяца " + month + ", дня " + dayOfMonth + ", дня недели " + dayOfWeek);
+      setDeviceValue(source, true);
+      console.info("Устройство включено в " + time + " для месяца " + month + ", дня " + dayOfMonth + ", дня недели " + dayOfWeek);
       
-      // Если включена опция автоматического выключения
-      if (options.AutoTurnOff) {
+      // Автоматическое отключение с учётом TurnOffDelay, если не DontTurnOff и TurnOffDelay > 0
+      if (options.TurnOffDelay > 0 && !options.DontTurnOff) {
         setTimeout(function() {
-          source.setValue(false);
-          console.info("Выключатель автоматически выключен через 1 секунду в " + time);
-        }, 1000); // 1 секунда = 1000 мс
+          setDeviceValue(source, false);
+          console.info("Устройство автоматически отключено через " + options.TurnOffDelay + " секунд в " + time);
+        }, options.TurnOffDelay * 1000);
       }
-    } else {
-      source.setValue(false);
-      console.info("Выключатель выключен в " + time + " - условия не совпадают (месяц: " + month + ", день: " + dayOfMonth + ", день недели: " + dayOfWeek + ")");
+    } else if (!options.DontTurnOff) {
+      setDeviceValue(source, false);
+      console.info("Устройство отключено в " + time + " - условия не совпадают (месяц: " + month + ", день: " + dayOfMonth + ", день недели " + dayOfWeek + ")");
     }
   });
 
-  // Задача на отключение: выключение в указанное время, если оно не совпадает с временем включения
-  if (time !== turnOffTime) {
-    variables.midnightTask = Cron.schedule("0 " + turnOffMinutesStr + " " + turnOffHoursStr + " * * *", function() {
-      source.setValue(false);
-      console.info("Выключатель выключен в " + turnOffTime);
+  // Задача на отключение: используем TurnOffTime, если указано, иначе полночь (если не DontTurnOff)
+  if (!options.DontTurnOff) {
+    var offSchedule = (turnOffTime === "00:00" && options.TurnOffTime === "") ? "0 0 0 * * *" : "0 " + turnOffMinutesStr + " " + turnOffHoursStr + " * * *";
+    variables.midnightTask = Cron.schedule(offSchedule, function() {
+      setDeviceValue(source, false);
+      console.info("Устройство отключено в " + turnOffTime);
     });
-  } else {
-    console.info("Время отключения (" + turnOffTime + ") совпадает с временем включения, задача на отключение не запущена");
   }
 
-  console.info("Задачи Cron запущены для включения в указанные даты и время.");
+  console.info("Задачи Cron запущены для включения и отключения устройства.");
 }

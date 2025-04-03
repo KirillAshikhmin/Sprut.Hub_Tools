@@ -10,10 +10,11 @@
 - [Реле для термостата](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ThermostatRelay "Реле для термостата")
 - [Отслеживание батарей и сводка по ним](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Battery "Отслеживание батарей и сводка по ним")
 - [Адаптер минимальной яркости ламп](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/MinBrightAdapter "Адаптер минимальной яркости ламп")
+- [Внешний датчик температуры для термоголовки Aqara E1](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ExternalTempSensor "Внешний датчик температуры для термоголовки Aqara E1")
+- [Планировщик расширенный](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Scheduler "Планировщик расширенный")
 
 ## Шаблоны:
 -
-
 
 
 # Ссылки

@@ -12,6 +12,7 @@
 - [Адаптер минимальной яркости ламп](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/MinBrightAdapter "Адаптер минимальной яркости ламп")
 - [Внешний датчик температуры для термоголовки Aqara E1](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ExternalTempSensor "Внешний датчик температуры для термоголовки Aqara E1")
 - [Планировщик расширенный](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Scheduler "Планировщик расширенный")
+- [Unit тесты](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/UnitTests "Unit тесты")
 
 ## Шаблоны:
 -

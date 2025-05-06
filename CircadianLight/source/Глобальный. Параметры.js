@@ -5,6 +5,7 @@
 
 // Режим: { Час: [Температура, Яркость] }
 var onTime = {
+    10000: { name: "Динамический (Надо запрограммировать)" },
 
     // Долго держится большая яркость, температура света утром холоднеет медленнее
     0: {
@@ -145,4 +146,21 @@ function getCircadianPreset(preset) {
 
 function getMiredToHueAndSaturationMap() {
     return miredToHueAndSaturation
+}
+
+/**
+ * hours - текущий час
+ * minute - текущая минута
+ * preset - идентификатор выбранного режима
+ * temp - температура света из режима
+ * bright - яркость из режима
+ * serviceUUID - идентификатор сервиса в виде строки "АЕСЕССУАР.СЕРВИС", напримре "222.13"
+ */
+function getCircadianLightDynamicParams(hours, minute, preset, temp, bright, serviceUUID) {
+    if (preset == 10000) {
+        let temperature = 50 + hours * 15
+        let bright = (minute * 1.69) | 0
+        return [temperature, bright];
+    }
+    return [temp, bright];
 }

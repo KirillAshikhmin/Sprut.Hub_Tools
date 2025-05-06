@@ -1,7 +1,7 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "5.0",
+  version: "5.1",
   author: "@BOOMikru",
 
   active: true,
@@ -70,11 +70,23 @@ info = {
         ru: "Время плавного включения (секунды)"
       },
       desc: {
-        en: "Time in seconds for smooth brightness transition when turning on. Set to 0 to disable. Experimental feature. It is better to use the lamp's built-in setting if available.",
-        ru: "Время в секундах для плавного изменения яркости при включении. Установите 0 для отключения. Экспериментальная функция. Лучше использовать встроенную настройку лампы, если она доступна."
+        en: "Time in seconds for smooth brightness transition when turning on. Set to 0 to disable. It is better to use the lamp's built-in setting if available.",
+        ru: "Время в секундах для плавного изменения яркости при включении. Установите 0 для отключения. Лучше использовать встроенную настройку лампы, если она доступна."
       },
       type: "Integer",
       value: 0,
+    },
+    RandomSeconds: {
+      name: {
+        en: "Random change time",
+        ru: "Случайное время изменения"
+      },
+      desc: {
+        en: "By default, the values ​​are set by the hour every 5 minutes. With this parameter, the value will be set to 5 minutes and 0-60 seconds. It is necessary if the script is activated for many lamps, to avoid the error 'The execution queue cannot be more than 5 values'",
+        ru: "По умолчанию значения устанавливаются по часам каждые 5 минут. С этим параметром значение будет устанавливаться в 5 минут и 0-59 секунд. Необходимо если сценарий активирован у многих ламп, что бы избежать ошибки 'Очередь на выполнение не может быть больше 5-и значений'"
+      },
+      type: "Boolean",
+      value: false
     },
     Debug: {
       name: {
@@ -228,7 +240,10 @@ function trigger(source, value, variables, options, context) {
     // Если включено "Не менять яркость", и ещё не меняли
     if (options.DontChangeParam) {
 
-      let autoChange = isAutomaticChange(context)
+      const currentTime = Date.now();
+      ignoreSyncCallback = variables.lastSetTime && (currentTime - variables.lastSetTime < 1500)
+
+      let autoChange = isAutomaticChange(source.getUUID(), context, ignoreSyncCallback)
 
       if (variables.startParameter.isTurnOnByBright) variables.changed.bright = true
       if (variables.startParameter.isTurnOnByTemp) variables.changed.temp = true
@@ -307,7 +322,13 @@ function trigger(source, value, variables, options, context) {
       let installStartSat = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.startParameter.isTurnOnBySat && !variables.changed.temp
 
       if (installStartBright || installStartTemp || installStartHue || installStartSat) {
-        global.setCircadianLightForService(service, options.Preset, !installStartBright, !installStartTemp, !installStartHue, !installStartSat, isDebug, true);
+        variables.lastSetTime = Date.now();
+        let isSet = global.setCircadianLightForService(service, options.Preset, !installStartBright, !installStartTemp, !installStartHue, !installStartSat, isDebug, true);
+        if (!isSet) {
+          stop(source, variables, options)
+          reset(variables)
+          variables.runtime.stopped = true
+        }
       }
 
       if (!installStartBright && !installStartTemp) {
@@ -317,7 +338,6 @@ function trigger(source, value, variables, options, context) {
         variables.runtime.stopped = true
         return
       }
-
 
       // Плавное включение
       let brightAtStart = variables.startParameter.brightAtStart
@@ -369,7 +389,14 @@ function setCircadianValue(service, variables, options) {
   var dontChangeHue = variables.changed.hue == true || !enableTempByWhatChange
   var dontChangeSaturate = variables.changed.sat == true || !enableTempByWhatChange
 
-  global.setCircadianLightForService(service, options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, options.Debug);
+  variables.lastSetTime = Date.now();
+  let isSet = global.setCircadianLightForService(service, options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, options.Debug);
+  
+  if (!isSet) {
+    stop(source, variables, options)
+    reset(variables)
+    variables.runtime.stopped = true
+  }
 }
 
 function restartCron(source, variables, options) {
@@ -378,8 +405,10 @@ function restartCron(source, variables, options) {
     variables.cronTask.clear()
   }
 
+  const seconds = (options.RandomSeconds ? Math.floor(Math.random() * 59) : 0) | 0;
+
   // Запускаем новую задачу на обновление
-  let task = Cron.schedule("0 */5 * * * *", function () {
+  let task = Cron.schedule(seconds + " */5 * * * *", function () {
     const disableName = global.getCircadianLightGlobalVariableForDisable(source.getService())
     if (GlobalVariables[disableName] == true) {
       variables.disabled = true
@@ -435,7 +464,7 @@ function contain(source, substring) {
   return source.toString().indexOf(substring) !== -1
 }
 
-function isAutomaticChange(context) {
+function isAutomaticChange(uuid, context, ignoreSyncCallback) {
   // Разделяем контекст на элементы по символу '<-'
   const elements = context.toString().split(' <- ')//.map(function(el) { el.trim() });
   // Проверяем, есть ли элементы в массиве
@@ -444,9 +473,20 @@ function isAutomaticChange(context) {
   }
   let last = elements[elements.length - 1]
 
-  // Условие 1: Последний элемент начинается с 'CLINK'
-  if (last.startsWith('CLINK') || last.startsWith('HUB[OnStart]')) {
+  // Условие 0: Последний элемент начинается с 'HUB[OnStart]'
+  if (last.startsWith('HUB[OnStart]')) {
     return true;
+  }
+  // Условие 1: Событие пришло от другого устройства, а далее оно управляет целевым
+  if (last.startsWith('CLINK') && elements.length >= 2) {
+    let preLast = elements[elements.length - 2]
+    if (preLast.startsWith('C[' + uuid))
+      return true;
+    if (preLast.startsWith('C[') && !preLast.startsWith('C[' + uuid) && elements.length == 5) {
+      if (elements[2].startsWith('VLINK') && elements[1].startsWith('C[' + uuid)) {
+        return ignoreSyncCallback == true
+      }
+    }
   }
 
   // Условие 2: Первые три элемента соответствуют шаблону 'LOGIC <- C <- LOGIC'

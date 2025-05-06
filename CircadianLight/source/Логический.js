@@ -12,30 +12,6 @@ info = {
   sourceCharacteristics: [HC.On, HC.Brightness, HC.ColorTemperature, HC.Hue, HC.Saturation],
 
   options: {
-    DontChangeParam: {
-      name: {
-        en: "Don't change parameter automatically",
-        ru: "Не менять характеристику автоматически после её ручного изменения"
-      },
-      desc: {
-        en: "Reset after turn off",
-        ru: "Например - изменили яркость и она больше не изменится автоматически. Сбрасывается при выключении лампы"
-      },
-      type: "Boolean",
-      value: true
-    },
-    StopAfterChangeParam: {
-      name: {
-        en: "Stop after change characteristic",
-        ru: "Останавливать циркадный режим после изменения любой из характеристик"
-      },
-      desc: {
-        en: "Work only up option",
-        ru: "При ручном изменении яркости или температуры циркадный режим останавливается. Работает только совместно с выключенной настройкой выше"
-      },
-      type: "Boolean",
-      value: false
-    },
     Preset: {
       name: {
         en: "Preset",
@@ -63,6 +39,30 @@ info = {
         { value: 1, name: { en: "Brightness", ru: "Только яркость" } },
         { value: 2, name: { en: "Temperature", ru: "Только цветовую температуру" } }
       ]
+    },
+    DontChangeParam: {
+      name: {
+        en: "Don't change parameter automatically",
+        ru: "Не менять характеристику автоматически после её ручного изменения"
+      },
+      desc: {
+        en: "Reset after turn off",
+        ru: "Например - изменили яркость и она больше не изменится автоматически. Сбрасывается при выключении лампы"
+      },
+      type: "Boolean",
+      value: true
+    },
+    StopAfterChangeParam: {
+      name: {
+        en: "Stop after change characteristic",
+        ru: "Останавливать циркадный режим после изменения любой из характеристик"
+      },
+      desc: {
+        en: "Work only up option",
+        ru: "При ручном изменении яркости или температуры циркадный режим останавливается. Работает только совместно с выключенной настройкой выше"
+      },
+      type: "Boolean",
+      value: false
     },
     SmoothOnTime: {
       name: {

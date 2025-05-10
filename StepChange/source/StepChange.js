@@ -10,7 +10,7 @@ const directionOptions = [
 info = {
     name: "📈 Пошаговое изменение характеристики по кнопке или датчику касания",
     description: "Изменяет выбранную характеристику устройства по нажатию на кнопку или в цикле, пока кнопка зажата",
-    version: "2.0",
+    version: "2.1",
     author: "@BOOMikru Special thx to @dshtolin",
     onStart: false,
 
@@ -56,7 +56,7 @@ info = {
         },
         singlePressStopAuto: {
             name: { en: "Stop auto change on single press", ru: "При одиночном нажатии останавливать автоматическое изменение" },
-            desc: { en: "If enabled, single press stops auto change without turning on/off.\nApplies only to button-triggered changes.", ru: "Если включено, то одиночное нажатие останавливает автоматическое изменение характеристики без включения/выключения.\nРаспространяется только на изменения запущенные кнопками" },
+            desc: { en: "If enabled, single press stops auto change without turning on/off.", ru: "Если включено, то одиночное нажатие останавливает автоматическое изменение характеристики без включения/выключения." },
             type: "Boolean",
             value: true
         },
@@ -90,7 +90,7 @@ info = {
         },
         singlePressIntervalTime: {
             name: { en: "   Interval time (ms)", ru: "   Время интервала (мс)" },
-            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики" },
+            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики. Не использовать для 'Целевой позиции'" },
             type: "Integer",
             value: 0
         },
@@ -101,19 +101,19 @@ info = {
         },
         singlePressZero: {
             name: { en: "   To zero", ru: "   Не уменьшать до 0" },
-            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп). Данная настройка ставит минимальное значение 1, вместо 0." },
+            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп)." },
             type: "Boolean",
             value: false
         },
         singlePressCustomLimits: {
             name: { en: "   Custom limits", ru: "   Собственные ограничения" },
-            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7. Укажите диапазон через тире (можно с пробелами), поддерживаются дробные и отрицательные числа с точкой или запятой." },
+            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7." },
             type: "String",
             value: ""
         },
         singlePressCustomSteps: {
             name: { en: "   Custom steps", ru: "   Собственные шаги" },
-            desc: { en: "Example: 1;7;16;35", ru: "Через точку с запятой. Например: 1;7;16;35. Можно вводить дробные значения через точку (25.5). Если установлено - настройка 'Шаг' не используется" },
+            desc: { en: "Example: 1;7.8;16.5;35", ru: "Через точку с запятой. Например: 1;7.8;16.5;35. Если установлено - настройка 'Шаг' не используется" },
             type: "String",
             value: ""
         },
@@ -146,7 +146,7 @@ info = {
         },
         doublePressIntervalTime: {
             name: { en: "   Interval time (ms)", ru: "   Время интервала (мс)" },
-            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики" },
+            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики. Не использовать для 'Целевой позиции'" },
             type: "Integer",
             value: 0
         },
@@ -157,19 +157,19 @@ info = {
         },
         doublePressZero: {
             name: { en: "   To zero", ru: "   Не уменьшать до 0" },
-            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп). Данная настройка ставит минимальное значение 1, вместо 0." },
+            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп)." },
             type: "Boolean",
             value: false
         },
         doublePressCustomLimits: {
             name: { en: "   Custom limits", ru: "   Собственные ограничения" },
-            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7. Укажите диапазон через тире (можно с пробелами), поддерживаются дробные и отрицательные числа с точкой или запятой." },
+            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7." },
             type: "String",
             value: ""
         },
         doublePressCustomSteps: {
             name: { en: "   Custom steps", ru: "   Собственные шаги" },
-            desc: { en: "Example: 1;7;16;35", ru: "Через точку с запятой. Например: 1;7;16;35. Можно вводить дробные значения через точку (25.5). Если установлено - настройка 'Шаг' не используется" },
+            desc: { en: "Example: 1;7.8;16.5;35", ru: "Через точку с запятой. Например: 1;7.8;16.5;35. Если установлено - настройка 'Шаг' не используется" },
             type: "String",
             value: ""
         },
@@ -202,7 +202,7 @@ info = {
         },
         longPressIntervalTime: {
             name: { en: "   Interval time (ms)", ru: "   Время интервала (мс)" },
-            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики" },
+            desc: { en: "If greater than 0, enables automatic characteristic change", ru: "При значении больше 0 активируется автоматическое изменение характеристики. Не использовать для 'Целевой позиции'" },
             type: "Integer",
             value: 0
         },
@@ -213,19 +213,19 @@ info = {
         },
         longPressZero: {
             name: { en: "   To zero", ru: "   Не уменьшать до 0" },
-            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп). Данная настройка ставит минимальное значение 1, вместо 0." },
+            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп)." },
             type: "Boolean",
             value: false
         },
         longPressCustomLimits: {
             name: { en: "   Custom limits", ru: "   Собственные ограничения" },
-            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7. Укажите диапазон через тире (можно с пробелами), поддерживаются дробные и отрицательные числа с точкой или запятой." },
+            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7." },
             type: "String",
             value: ""
         },
         longPressCustomSteps: {
             name: { en: "   Custom steps", ru: "   Собственные шаги" },
-            desc: { en: "Example: 1;7;16;35", ru: "Через точку с запятой. Например: 1;7;16;35. Можно вводить дробные значения через точку (25.5). Если установлено - настройка 'Шаг' не используется" },
+            desc: { en: "Example: 1;7.8;16.5;35", ru: "Через точку с запятой. Например: 1;7.8;16.5;35. Если установлено - настройка 'Шаг' не используется" },
             type: "String",
             value: ""
         },
@@ -258,6 +258,7 @@ info = {
         },
         contactSensorIntervalTime: {
             name: { en: "   Interval time (ms)", ru: "   Время интервала (мс)" },
+            desc: { en: "Not use for TargetPosition", ru: "Не использовать для 'Целевой позиции'" },
             type: "Integer",
             value: 500
         },
@@ -268,19 +269,19 @@ info = {
         },
         contactSensorZero: {
             name: { en: "   To zero", ru: "   Не уменьшать до 0" },
-            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп). Данная настройка ставит минимальное значение 1, вместо 0." },
+            desc: { en: "For some characteristics zero value equals turn off", ru: "В некоторых характеристиках значение 0 приводит к выключению устройства (напр. яркость у ламп)." },
             type: "Boolean",
             value: false
         },
         contactSensorCustomLimits: {
             name: { en: "   Custom limits", ru: "   Собственные ограничения" },
-            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7. Укажите диапазон через тире (можно с пробелами), поддерживаются дробные и отрицательные числа с точкой или запятой." },
+            desc: { en: "Example: 18.5 - 27 or -40 - -0.7", ru: "Пример: 18.5 - 27 или -40 - -0.7." },
             type: "String",
             value: ""
         },
         contactSensorCustomSteps: {
             name: { en: "   Custom steps", ru: "   Собственные шаги" },
-            desc: { en: "Example: 1;7;16;35", ru: "Через точку с запятой. Например: 1;7;16;35. Можно вводить дробные значения через точку (25.5). Если установлено - настройка 'Шаг' не используется" },
+            desc: { en: "Example: 1;7.8;16.5;35", ru: "Через точку с запятой. Например: 1;7.8;16.5;35. Если установлено - настройка 'Шаг' не используется" },
             type: "String",
             value: ""
         },
@@ -289,7 +290,21 @@ info = {
             desc: { en: "Delay before starting changes, set to 0 to disable delay", ru: "Задержка перед началом изменений, установите 0 для отключения задержки" },
             type: "Integer",
             value: 500
-        }
+        },
+        positionBehavior: {
+            name: {
+                en: "Target position stopping behavior",
+                ru: "Способ остановки изменения Текущей позиции"
+            },
+            type: "Integer",
+            value: 0,
+            formType: "list",
+            values: [
+                { value: 0, name: { en: "Basic", ru: "Просто останавливать изменение" } },
+                { value: 1, name: { en: "Target", ru: "Устанавливать Целевую позицию равной текущей" } },
+                { value: 2, name: { en: "PositionState", ru: "Устанавливать Конечное состояние в значение Остановлено" } }
+            ]
+        },
     },
 
     variables: {
@@ -345,17 +360,39 @@ function trigger(source, value, variables, options) {
         const isContactSensor = source.getType() === HC.ContactSensorState;
 
         if (isButton) {
-            if (value === 0 && options.singlePressStopAuto && variables.buttonInterval) {
-                debug("Одиночное нажатие: остановка автоматического изменения", source, options);
-                clearInterval(variables.buttonInterval);
-                variables.buttonInterval = undefined;
-                return;
+            if (value === 0 && options.singlePressStopAuto) {
+                let stopped = false
+                if (variables.buttonInterval) {
+                    debug("Одиночное нажатие: остановка автоматического изменения", source, options);
+                    clearInterval(variables.buttonInterval);
+                    variables.buttonInterval = undefined;
+                    stopped = true
+                }
+                let currentPosition = service.getCharacteristic(HC.CurrentPosition)
+                if (currentPosition) {
+                    if (options.positionBehavior == 1) {
+                        let targetPosition = service.getCharacteristic(HC.TargetPosition)
+                        if (targetPosition && currentPosition.getValue() != targetPosition.getValue()) {
+                            debug("Одиночное нажатие: установка целевой позиции равной текущей", source, options);
+                            targetPosition.setValue(currentPosition.getValue())
+                            stopped = true
+                        }
+                    } else if (options.positionBehavior == 2) {
+                        let targetPositionState = service.getCharacteristic(HC.C_TargetPositionState)
+                        if (targetPositionState) {
+                            debug("Одиночное нажатие: установка конечного состояния в положение Остановлено", source, options);
+                            targetPositionState.setValue(2)
+                            stopped = true
+                        }
+                    }
+                }
+                if (stopped) return
             }
 
             if (value === 0 && options.singlePressTurn) {
                 const currentTime = Date.now();
                 if (variables.lastLimitTime && (currentTime - variables.lastLimitTime < 3000)) {
-                    debug("Одиночное нажатие проигнорировано: прошло менее 1 секунды после достижения лимита", source, options);
+                    debug("Одиночное нажатие проигнорировано: прошло менее 3 секунд после достижения лимита", source, options);
                     variables.lastLimitTime = currentTime - 10000;
                     return;
                 }
@@ -426,14 +463,15 @@ function trigger(source, value, variables, options) {
                     return;
                 }
 
-                let defaultMin = characteristic.min;
-                let defaultMax = characteristic.max;
+                let defaultMin = Math.max(characteristic.min, serviceCharacteristic.getMinValue());
+                let defaultMax = (characteristic.getMaxValue() != 0) ? Math.min(characteristic.max, characteristic.getMaxValue()) : characteristic.max;
                 const customLimits = parseCustomLimits(customLimitsStr);
                 const characteristicMin = customLimits ? customLimits.min : (defaultMin === 0 && zero ? 1 : defaultMin);
                 const characteristicMax = customLimits ? customLimits.max : defaultMax;
                 const middleValue = (characteristicMax - characteristicMin) / 2;
 
                 let currentValue = serviceCharacteristic.getValue();
+                step = serviceCharacteristic.getMinStep() != 0 ? Math.max(step, serviceCharacteristic.getMinStep()) : step
 
                 if (step > 0 || customSteps) {
                     let increase = getIsIncrease(direction, currentValue, middleValue, variables, increaseDirectionVar);
@@ -475,6 +513,8 @@ function trigger(source, value, variables, options) {
             }
         }
 
+
+
         if (isContactSensor && options.contactSensorOn) {
             const whatChange = options.contactSensorWhatChange;
             if (whatChange < 0) {
@@ -493,14 +533,14 @@ function trigger(source, value, variables, options) {
                 return;
             }
 
-            let defaultMin = characteristic.min;
-            let defaultMax = characteristic.max;
+            let defaultMin = Math.max(characteristic.min, serviceCharacteristic.getMinValue());
+            let defaultMax = (characteristic.getMaxValue() != 0) ? Math.min(characteristic.max, characteristic.getMaxValue()) : characteristic.max;
             const customLimits = parseCustomLimits(options.contactSensorCustomLimits);
             const characteristicMin = customLimits ? customLimits.min : (defaultMin === 0 && options.contactSensorZero ? 1 : defaultMin);
             const characteristicMax = customLimits ? customLimits.max : defaultMax;
             const middleValue = (characteristicMax - characteristicMin) / 2;
 
-            const step = options.contactSensorStep;
+            const step = serviceCharacteristic.getMinStep() != 0 ? Math.max(options.contactSensorStep, serviceCharacteristic.getMinStep()) : options.contactSensorStep
             const customSteps = parseCustomSteps(options.contactSensorCustomSteps);
             const intervalTime = options.contactSensorIntervalTime;
             const direction = options.contactSensorDirection;
@@ -572,6 +612,7 @@ function trigger(source, value, variables, options) {
         log.error("Ошибка выполнения задачи: " + e.message);
     }
 }
+
 
 function getServiceByUUID(uuid) {
     let uuidParts = uuid.split('.');
@@ -743,6 +784,11 @@ characteristicsList.push({ name: { ru: "Порог охлаждения", en: "C
 characteristicsList.push({ name: { ru: "Скорость вентилятора (%)", en: "Rotation Speed (%)" }, value: 9, type: HC.RotationSpeed, min: 0, max: 100 });
 characteristicsList.push({ name: { ru: "Скорость вентилятора (Шаг)", en: "Fan Speed (Step)" }, value: 10, type: HC.C_FanSpeed, min: 0, max: 5 });
 characteristicsList.push({ name: { ru: "Громкость", en: "Volume" }, value: 11, type: HC.Volume, min: 0, max: 100 });
+characteristicsList.push({ name: { ru: "Целевой горизонтальный угол наклона", en: "Target horizontal tilt angle" }, value: 12, type: HC.TargetHorizontalTiltAngle, min: -90, max: 90 });
+characteristicsList.push({ name: { ru: "Целевой вертикальный угол наклона", en: "Target vertical tilt angle" }, value: 13, type: HC.TargetVerticalTiltAngle, min: -90, max: 90 });
+characteristicsList.push({ name: { ru: "Оптический зум", en: "OpticalZoom" }, value: 14, type: HC.OpticalZoom, min: 0, max: 100 });
+characteristicsList.push({ name: { ru: "Цифровой зум", en: "DigitalZoom" }, value: 15, type: HC.DigitalZoom, min: 0, max: 100 });
+characteristicsList.push({ name: { ru: "Поворот изображение", en: "ImageRotation" }, value: 16, type: HC.ImageRotation, min: 0, max: 270 });
 
 let characteristicsToFound = characteristicsList.map(c => c.type);
 

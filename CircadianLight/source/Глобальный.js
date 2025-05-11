@@ -1,4 +1,4 @@
-const VERSION = "5.1"
+const VERSION = "6.0"
 
 // Константы для улучшения читаемости
 const MIN_BRIGHTNESS = 1;
@@ -15,7 +15,6 @@ function getCircadianLight(preset, uuid) {
     return getCircadianLightForTime(hours, minute, preset, uuid);
 }
 
-
 function getCircadianLightForTime(hours, minute, preset, uuid) {
 
     function getValueFromPreset(onTimePreset, hours) { let h = (hours | 0) + ""; return (Object.keys(onTimePreset).indexOf(h) >= 0) ? onTimePreset[h] : [50, 100]; }
@@ -28,7 +27,6 @@ function getCircadianLightForTime(hours, minute, preset, uuid) {
     var bright = tempAndBright[1] + ((nextTempAndBright[1] - tempAndBright[1]) / MINUTES_IN_HOUR * minute)
     temp = Math.round(Math.max(MIN_COLOR_TEMPERATURE, Math.min(MAX_COLOR_TEMPERATURE, temp))) | 0;
     bright = Math.round(Math.max(MIN_BRIGHTNESS, Math.min(MAX_BRIGHTNESS, bright))) | 0;
-    //console.info("Циркадное освещение. Получение. Время {}:{}. Режим {}. Температура {} и яркость {}", hours, minute, preset, temp, bright)
     if (global.getCircadianLightDynamicParams) {
         return global.getCircadianLightDynamicParams(hours, minute, preset, temp, bright, uuid)
     } else {
@@ -37,14 +35,14 @@ function getCircadianLightForTime(hours, minute, preset, uuid) {
 }
 
 
-function setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, isDebug, isDebugAll) {
+function setCircadianLightForService(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, changeTempDelay, isDebug, isDebugAll) {
     const date = new Date()
     const hours = date.getHours() | 0;
     const minute = date.getMinutes() | 0;
-    return setCircadianLightForServiceForTime(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, isDebug, isDebugAll, hours, minute)
+    return setCircadianLightForServiceForTime(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, changeTempDelay, isDebug, isDebugAll, hours, minute)
 }
 
-function setCircadianLightForServiceForTime(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, isDebug, isDebugAll, hours, minute) {
+function setCircadianLightForServiceForTime(service, preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, changeTempDelay, isDebug, isDebugAll, hours, minute) {
 
     const debugPrefix = DEBUG_TITLE + getCircadianLightServiceName(service) + " "
 
@@ -115,13 +113,24 @@ function setCircadianLightForServiceForTime(service, preset, dontChangeBright, d
     if (allowBrightChange)
         brightness.setValue(bright)
 
-    if (canTemperatureChange) {
-        if (allowTemperatureChange) temperature.setValue(temp)
-    } else {
-        if (allowHueChange)
-            hue.setValue(hueAndSaturation[0])
-        if (allowSaturationChange)
-            saturation.setValue(hueAndSaturation[1])
+    if (allowTemperatureChange || allowHueChange || allowSaturationChange) {
+        function changeTemp() {
+            if (canTemperatureChange) {
+                if (allowTemperatureChange) temperature.setValue(temp)
+            } else {
+                if (allowHueChange)
+                    hue.setValue(hueAndSaturation[0])
+                if (allowSaturationChange)
+                    saturation.setValue(hueAndSaturation[1])
+            }
+        }
+        if (changeTempDelay) {
+            setSafeTimeout(() => {
+                changeTemp()
+            }, 1000)
+        } else {
+            changeTemp()
+        }
     }
     return true
 }
@@ -169,7 +178,7 @@ function getCircadianLightServiceName(service) {
     const room = acc.getRoom().getName()
     const accName = service.getAccessory().getName()
     const sName = service.getName()
-    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")" + (!service.isVisible() ? ". Скрыта" : "")
+    const name = room + " -> " + (accName == sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")" + (!service.isVisible() ? ". Скрыта. " : "")
     return name
 }
 
@@ -220,32 +229,49 @@ function toArray(items) {
     return items
 }
 
+let inTestMode = false
+
+function setSafeTimeout(callback, delay) {
+    if (inTestMode) {
+        callback();
+    } else {
+        return setTimeout(callback, delay);
+    }
+}
+
 // Примеры использования для тестирования
 function runTests() {
     if (!global.hasUnitTests) { return; }
-    let assert = global.assert; let assertNull = global.assertNull; let assertNotNull = global.assertNotNull; let assertEquals = global.assertEquals; let assertNotEquals = global.assertNotEquals; let assertTrue = global.assertTrue; let assertFalse = global.assertFalse; let assertDefined = global.assertDefined; let assertContains = global.assertContains; let assertEmpty = global.assertEmpty; let assertNotEmpty = global.assertNotEmpty; let assertLength = global.assertLength;
 
-    let lampAccInfo = { id: 1, name: "Лампочка", room: "Тест", model: "", modelId: "", manufacturer: "", manufacturerId: "", serial: "", firmware: "", services: [{ id: 10, type: HS.Lightbulb, name: "Лампочка Температуры", characteristics: [{ id: 11, type: HC.On, value: !0 }, { id: 12, type: HC.Brightness, name: "Яркость", value: 100 }, { id: 13, type: HC.ColorTemperature, name: "Температура", value: 400 }] }, { id: 20, type: HS.Lightbulb, name: "Лампочка Цвет", characteristics: [{ id: 21, type: HC.On, value: !0 }, { id: 22, type: HC.Brightness, name: "Яркость", value: 100 }, { id: 23, type: HC.Saturation, name: "Насыщенность", value: 0 }, { id: 24, type: HC.Hue, name: "Оттенок", value: 0 }] }] };
-    let hours = 0
-    let minute = 30
-    let preset = 99999
+    try {
+        inTestMode = true
+        let assert = global.assert; let assertNull = global.assertNull; let assertNotNull = global.assertNotNull; let assertEquals = global.assertEquals; let assertNotEquals = global.assertNotEquals; let assertTrue = global.assertTrue; let assertFalse = global.assertFalse; let assertDefined = global.assertDefined; let assertContains = global.assertContains; let assertEmpty = global.assertEmpty; let assertNotEmpty = global.assertNotEmpty; let assertLength = global.assertLength;
 
-    let valuesForTime = getCircadianLightForTime(hours, minute, preset, "1.1")
-    assertLength(valuesForTime, 2)
-    assertEquals(valuesForTime[0], 300, "Температура не совпадает")
-    assertEquals(valuesForTime[1], 60, "Яркость не совпадает")
+        let lampAccInfo = { id: 1, name: "Лампочка", room: "Тест", model: "", modelId: "", manufacturer: "", manufacturerId: "", serial: "", firmware: "", services: [{ id: 10, type: HS.Lightbulb, name: "Лампочка Температуры", characteristics: [{ id: 11, type: HC.On, value: !0 }, { id: 12, type: HC.Brightness, name: "Яркость", value: 100 }, { id: 13, type: HC.ColorTemperature, name: "Температура", value: 400 }] }, { id: 20, type: HS.Lightbulb, name: "Лампочка Цвет", characteristics: [{ id: 21, type: HC.On, value: !0 }, { id: 22, type: HC.Brightness, name: "Яркость", value: 100 }, { id: 23, type: HC.Saturation, name: "Насыщенность", value: 0 }, { id: 24, type: HC.Hue, name: "Оттенок", value: 0 }] }] };
+        let hours = 0
+        let minute = 30
+        let preset = 99999
 
-    let acc = global.createUnitTestFullAccessory(lampAccInfo)
-    let serviceTemp = acc.getServices()[0];
-    setCircadianLightForServiceForTime(serviceTemp, preset, false, false, false, false, false, false, hours, minute)
-    assertEquals(serviceTemp.getCharacteristic(HC.ColorTemperature).getValue(), 300, "Температура не совпадает")
-    assertEquals(serviceTemp.getCharacteristic(HC.Brightness).getValue(), 60, "Яркость не совпадает")
-    let serviceHue = acc.getServices()[1];
-    setCircadianLightForServiceForTime(serviceHue, preset, false, false, false, false, false, false, hours, minute)
-    assertEquals(serviceHue.getCharacteristic(HC.Saturation).getValue(), 44, "Насыщенность не совпадает")
-    assertEquals(serviceHue.getCharacteristic(HC.Hue).getValue(), 32, "Оттенок не совпадает")
-    assertEquals(serviceHue.getCharacteristic(HC.Brightness).getValue(), 60, "Яркость не совпадает")
-    console.info(DEBUG_TITLE + "Тесты пройдены")
+        let valuesForTime = getCircadianLightForTime(hours, minute, preset, "1.1")
+        assertLength(valuesForTime, 2)
+        assertEquals(valuesForTime[0], 300, "Тест 1. Температура не совпадает")
+        assertEquals(valuesForTime[1], 60, "Тест 1. Яркость не совпадает")
+
+        let acc = global.createUnitTestFullAccessory(lampAccInfo)
+        let serviceTemp = acc.getServices()[0];
+        setCircadianLightForServiceForTime(serviceTemp, preset, false, false, false, false, false, false, false, hours, minute)
+        assertEquals(serviceTemp.getCharacteristic(HC.ColorTemperature).getValue(), 300, "Тест 2. Температура не совпадает")
+        assertEquals(serviceTemp.getCharacteristic(HC.Brightness).getValue(), 60, "Тест 2. Яркость не совпадает")
+
+        let serviceHue = acc.getServices()[1];
+        setCircadianLightForServiceForTime(serviceHue, preset, false, false, false, false, false, false, false, hours, minute)
+        assertEquals(serviceHue.getCharacteristic(HC.Saturation).getValue(), 44, "Тест 3. Насыщенность не совпадает")
+        assertEquals(serviceHue.getCharacteristic(HC.Hue).getValue(), 32, "Тест 3. Оттенок не совпадает")
+        assertEquals(serviceHue.getCharacteristic(HC.Brightness).getValue(), 60, "Тест 3. Яркость не совпадает")
+        console.info(DEBUG_TITLE + "Тесты пройдены")
+    } finally {
+        inTestMode = false
+    }
 }
 
 function getCircadianLightGlobalVariableForReset(service) {

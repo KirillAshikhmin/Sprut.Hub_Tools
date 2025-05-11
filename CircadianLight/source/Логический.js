@@ -1,7 +1,7 @@
 info = {
   name: "Циркадное освещение",
   description: "Устанавливает температуру и яркость лампы в зависимости от времени суток. Значения берутся из глобального сценария. Изменить значения внутри режимов и добавить свои можно там же. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/CircadianLight и в канале https://t.me/smart_sputnik",
-  version: "5.1",
+  version: "6.0",
   author: "@BOOMikru",
 
   active: true,
@@ -40,29 +40,20 @@ info = {
         { value: 2, name: { en: "Temperature", ru: "Только цветовую температуру" } }
       ]
     },
-    DontChangeParam: {
+    Behavior: {
       name: {
-        en: "Don't change parameter automatically",
-        ru: "Не менять характеристику автоматически после её ручного изменения"
+        en: "Behavior characteristic changes",
+        ru: "Поведение при изменении характеристики (яркости или температуры)"
       },
-      desc: {
-        en: "Reset after turn off",
-        ru: "Например - изменили яркость и она больше не изменится автоматически. Сбрасывается при выключении лампы"
-      },
-      type: "Boolean",
-      value: true
-    },
-    StopAfterChangeParam: {
-      name: {
-        en: "Stop after change characteristic",
-        ru: "Останавливать циркадный режим после изменения любой из характеристик"
-      },
-      desc: {
-        en: "Work only up option",
-        ru: "При ручном изменении яркости или температуры циркадный режим останавливается. Работает только совместно с выключенной настройкой выше"
-      },
-      type: "Boolean",
-      value: false
+      type: "Integer",
+      value: 0,
+      formType: "list",
+      values: [
+        { value: 0, name: { en: "StopChar", ru: "Останавливать автоматическое изменение характеристики" } },
+        { value: 1, name: { en: "StopCircade", ru: "Останавливать циркадный режим" } },
+        { value: 2, name: { en: "Ignore", ru: "Игнорировать (в каждые 5 минут по часам будет восстанавливаться)" } },
+        { value: 3, name: { en: "Restore", ru: "Восстанавить циркадное значение сразу" } }
+      ]
     },
     SmoothOnTime: {
       name: {
@@ -71,10 +62,28 @@ info = {
       },
       desc: {
         en: "Time in seconds for smooth brightness transition when turning on. Set to 0 to disable. It is better to use the lamp's built-in setting if available.",
-        ru: "Время в секундах для плавного изменения яркости при включении. Установите 0 для отключения. Лучше использовать встроенную настройку лампы, если она доступна."
+        ru: "Время в секундах для плавного изменения яркости при включении. Установите 0 для отключения. Лучше использовать встроенную настройку лампы, если она доступна. Не использовать, если к этой лампе привязаны другие"
       },
       type: "Integer",
       value: 0,
+    },
+    LinkedBehavior: {
+      name: {
+        en: "Behavior linked lamp",
+        ru: "Поведение при изменении характеристики у связанной лампы"
+      },
+      desc: {
+        en: "For example, when the circadian mode is activated in a chandelier that consists of 5 smart lamps. Not use if no has linked lamps",
+        ru: "Например когда циркадный режим активируется у люстры, которая состоит из 5 умных ламп. Не используется, если нет связанных ламп."
+      },
+      type: "Integer",
+      value: 0,
+      formType: "list",
+      values: [
+        { value: 0, name: { en: "Stop", ru: "Останавливать автоматическое изменение характеристики" } },
+        { value: 1, name: { en: "Ignore", ru: "Игнорировать" } },
+        { value: 2, name: { en: "Restore", ru: "Восстанавить циркадное значение" } }
+      ]
     },
     RandomSeconds: {
       name: {
@@ -84,6 +93,18 @@ info = {
       desc: {
         en: "By default, the values ​​are set by the hour every 5 minutes. With this parameter, the value will be set to 5 minutes and 0-60 seconds. It is necessary if the script is activated for many lamps, to avoid the error 'The execution queue cannot be more than 5 values'",
         ru: "По умолчанию значения устанавливаются по часам каждые 5 минут. С этим параметром значение будет устанавливаться в 5 минут и 0-59 секунд. Необходимо если сценарий активирован у многих ламп, что бы избежать ошибки 'Очередь на выполнение не может быть больше 5-и значений'"
+      },
+      type: "Boolean",
+      value: false
+    },
+    ChangeTempDelay: {
+      name: {
+        en: "Change temp after bright",
+        ru: "Менять температуру после яркости"
+      },
+      desc: {
+        en: "Set color temperature after one second  It is necessary if the script is activated for many lamps, to avoid the error 'The execution queue cannot be more than 5 values'",
+        ru: "Set the color temperature one second after setting the brightness. Необходимо если сценарий активирован у многих ламп, что бы избежать ошибки 'Очередь на выполнение не может быть больше 5-и значений'"
       },
       type: "Boolean",
       value: false
@@ -147,6 +168,7 @@ function trigger(source, value, variables, options, context) {
   const service = source.getService()
   const isOn = source.getType() == HC.On
   const isDebug = options.Debug
+  const behavior = options.Behavior
 
   // Проверка выключения и сброса
   const disableName = global.getCircadianLightGlobalVariableForDisable(service)
@@ -234,17 +256,47 @@ function trigger(source, value, variables, options, context) {
   const isHue = source.getType() == HC.Hue
   const isSaturation = source.getType() == HC.Saturation
 
+  let stopChange = false
+
   // Проверка изменения параметров. Событие вызывается и при автоматической смене яркости
   if (isBright || isTemp || isHue || isSaturation) {
+    let changeReason = getChageReason(context, source.getUUID())
+    let linkedCharacteristicType = undefined
+    let ignoreFromLinked = options.LinkedBehavior == 1 || changeReason.auto || (options.LinkedBehavior != 2 && variables.lastSetTime && (Date.now() - variables.lastSetTime < 1500))
+    if (changeReason.byLinkedLamp) {
+      if (ignoreFromLinked) { return; }
+      if (changeReason.linkedUUID) {
+        if (service.getCharacteristic(HC.On).getValue()) {
+          let linkedUUID = changeReason.linkedUUID
+          const cdata = linkedUUID.split('.');
+          const aid = cdata[0];
+          const sid = cdata[1];
+          let linkedService = Hub.getAccessory(aid).getService(sid)
+          linkedCharacteristicType = linkedService.getCharacteristic(cdata[2]).getType()
 
-    // Если включено "Не менять яркость", и ещё не меняли
-    if (options.DontChangeParam) {
+          if (options.LinkedBehavior == 2) {
+            setCircadianValue(linkedService, variables, options, true, linkedCharacteristicType)
+            return
+          }
+          if (options.LinkedBehavior == 0) {
+            stopChange = true
+          }
+        }
+      }
+    } else {
+      if (behavior == 3) {
+        let lastSetTime = variables.lastSetTime
+        if (lastSetTime && ((Date.now() - lastSetTime) > 1500) && !changeReason.auto) {
+          setCircadianValue(service, variables, options, options.Debug)
+        }
+        return
+      }
+    }
 
-      const currentTime = Date.now();
-      ignoreSyncCallback = variables.lastSetTime && (currentTime - variables.lastSetTime < 1500)
+    let autoChange = changeReason.auto
 
-      let autoChange = isAutomaticChange(source.getUUID(), context, ignoreSyncCallback)
-
+    // Если включено "Останавливать автоматическое изменение характеристики"
+    if (behavior == 0 || behavior == 1 || stopChange) {
       if (variables.startParameter.isTurnOnByBright) variables.changed.bright = true
       if (variables.startParameter.isTurnOnByTemp) variables.changed.temp = true
 
@@ -293,7 +345,7 @@ function trigger(source, value, variables, options, context) {
       return
     }
 
-    if (options.StopAfterChangeParam && variables.cronTask && (variables.changed.bright || variables.changed.temp || variables.changed.hue || variables.changed.sat)) {
+    if (behavior == 1 && variables.cronTask && (variables.changed.bright || variables.changed.temp || variables.changed.hue || variables.changed.sat)) {
       debug("Включено свойство 'Останавливать циркадный режим после изменения любого параметра'. Параметр был изменён, циркадный режим остановлен", source, isDebug)
       stop(source, variables, options)
       variables.runtime.stopped = true
@@ -313,23 +365,11 @@ function trigger(source, value, variables, options, context) {
       let enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
       let enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
 
-      const circadianValue = global.getCircadianLight(options.Preset)
-
       // Начальная установка значения
       let installStartBright = enableBrightByWhatChange && !variables.startParameter.isTurnOnByBright && !variables.changed.bright && !options.SmoothOn
       let installStartTemp = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.changed.temp
       let installStartHue = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.startParameter.isTurnOnByHue && !variables.changed.temp
       let installStartSat = enableTempByWhatChange && !variables.startParameter.isTurnOnByTemp && !variables.startParameter.isTurnOnBySat && !variables.changed.temp
-
-      if (installStartBright || installStartTemp || installStartHue || installStartSat) {
-        variables.lastSetTime = Date.now();
-        let isSet = global.setCircadianLightForService(service, options.Preset, !installStartBright, !installStartTemp, !installStartHue, !installStartSat, isDebug, true);
-        if (!isSet) {
-          stop(source, variables, options)
-          reset(variables)
-          variables.runtime.stopped = true
-        }
-      }
 
       if (!installStartBright && !installStartTemp) {
         debug("==== НЕ ЗАПУЩЕН ==== Циркадный режим не запущен, так как при включении лампы были изменены яркость и температура", source, isDebug)
@@ -339,33 +379,46 @@ function trigger(source, value, variables, options, context) {
         return
       }
 
+      if (installStartBright || installStartTemp || installStartHue || installStartSat) {
+        variables.lastSetTime = Date.now();
+        let isSet = global.setCircadianLightForService(service, options.Preset, !installStartBright, !installStartTemp, !installStartHue, !installStartSat, options.ChangeTempDelay, isDebug, true);
+        if (!isSet) {
+          stop(source, variables, options)
+          reset(variables)
+          variables.runtime.stopped = true
+        }
+      }
+
       // Плавное включение
       let brightAtStart = variables.startParameter.brightAtStart
-      let target = brightAtStart > 0 ? brightAtStart : circadianValue[1]
       let brightCharacteristic = service.getCharacteristic(HC.Brightness)
       let smoothTime = options.SmoothOnTime || 0;  // Время плавного включения, по умолчанию 0
-      if (!variables.changed.bright && !variables.startParameter.isTurnOnByBright && enableBrightByWhatChange && smoothTime > 0 && target > 1) {
-        variables.smoothOn.active = true;
-        let currentBr = 1;  // Начальная яркость — 1%
-        brightCharacteristic.setValue(currentBr);
+      if (!variables.changed.bright && !variables.startParameter.isTurnOnByBright && enableBrightByWhatChange && smoothTime > 0) {
+        const circadianValue = global.getCircadianLight(options.Preset, service.getUUID())
+        let target = brightAtStart > 0 ? brightAtStart : circadianValue[1]
+        if (target > 1) {
+          variables.smoothOn.active = true;
+          let currentBr = 1;  // Начальная яркость — 1%
+          brightCharacteristic.setValue(currentBr);
 
-        let intervalMs = 100;  // Интервал обновления — 100 мс
-        let steps = (smoothTime * 1000) / intervalMs;  // Количество шагов
-        let increaseBy = (target - currentBr) / steps;  // Шаг увеличения яркости
+          let intervalMs = 100;  // Интервал обновления — 100 мс
+          let steps = (smoothTime * 1000) / intervalMs;  // Количество шагов
+          let increaseBy = (target - currentBr) / steps;  // Шаг увеличения яркости
 
-        let interval = setInterval(function () {
-          if (currentBr >= target || !service.getCharacteristic(HC.On).getValue()) {
-            clearInterval(interval);
-            interval = undefined
-            variables.smoothOn.active = false;
-            if (currentBr >= target) brightCharacteristic.setValue(target);
-          } else {
-            currentBr += increaseBy;
-            currentBr = Math.min(currentBr, target);
-            brightCharacteristic.setValue(Math.round(currentBr));
-          }
-        }, intervalMs);
-        variables.smoothOn.task = interval;
+          let interval = setInterval(function () {
+            if (currentBr >= target || !service.getCharacteristic(HC.On).getValue()) {
+              clearInterval(interval);
+              interval = undefined
+              variables.smoothOn.active = false;
+              if (currentBr >= target) brightCharacteristic.setValue(target);
+            } else {
+              currentBr += increaseBy;
+              currentBr = Math.min(currentBr, target);
+              brightCharacteristic.setValue(Math.round(currentBr));
+            }
+          }, intervalMs);
+          variables.smoothOn.task = interval;
+        }
       }
       restartCron(source, variables, options)
     } else {
@@ -380,7 +433,7 @@ function trigger(source, value, variables, options, context) {
   }
 }
 
-function setCircadianValue(service, variables, options) {
+function setCircadianValue(service, variables, options, fullDebug, linkedCharacteristicType) {
   var enableBrightByWhatChange = options.WhatChange == 0 || options.WhatChange == 1
   var enableTempByWhatChange = options.WhatChange == 0 || options.WhatChange == 2
 
@@ -388,12 +441,21 @@ function setCircadianValue(service, variables, options) {
   var dontChangeTemp = variables.changed.temp == true || !enableTempByWhatChange
   var dontChangeHue = variables.changed.hue == true || !enableTempByWhatChange
   var dontChangeSaturate = variables.changed.sat == true || !enableTempByWhatChange
+  if (linkedCharacteristicType) {
+    dontChangeBright = dontChangeBright || linkedCharacteristicType != HC.Brightness
+    dontChangeTemp = dontChangeTemp || linkedCharacteristicType != HC.ColorTemperature
+    dontChangeHue = dontChangeHue || linkedCharacteristicType != HC.Hue
+    dontChangeSaturate = dontChangeSaturate || linkedCharacteristicType != HC.Saturation
+    fullDebug = options.Debug
+  }
+  let isSet = false
+  if (!dontChangeBright || !dontChangeTemp || !dontChangeHue || !dontChangeSaturate) {
+    variables.lastSetTime = Date.now();
+    isSet = global.setCircadianLightForService(service, options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, options.ChangeTempDelay, options.Debug, fullDebug);
+  }
 
-  variables.lastSetTime = Date.now();
-  let isSet = global.setCircadianLightForService(service, options.Preset, dontChangeBright, dontChangeTemp, dontChangeHue, dontChangeSaturate, options.Debug);
-  
-  if (!isSet) {
-    stop(source, variables, options)
+  if (!isSet && !linkedCharacteristicType) {
+    stop(service.getCharacteristic(HC.On), variables, options)
     reset(variables)
     variables.runtime.stopped = true
   }
@@ -421,6 +483,9 @@ function restartCron(source, variables, options) {
 
   variables.cronTask = task;
   debug("==== ЗАПУСК ==== Циркадный режим запущен", source, options.Debug)
+
+  let opts = "Preset: " + options.Preset + ". WhatChange: " + options.WhatChange + ". Behavior: " + options.Behavior + ". SmoothOnTime: " + options.SmoothOnTime + ". RandomSeconds: " + options.RandomSeconds + ". LinkedBehavior: " + options.LinkedBehavior
+  debug("СВОЙСТВА: " + opts, source, options.Debug)
 }
 
 function stop(source, variables, options, dontShowDebug) {
@@ -464,41 +529,55 @@ function contain(source, substring) {
   return source.toString().indexOf(substring) !== -1
 }
 
-function isAutomaticChange(uuid, context, ignoreSyncCallback) {
-  // Разделяем контекст на элементы по символу '<-'
-  const elements = context.toString().split(' <- ')//.map(function(el) { el.trim() });
-  // Проверяем, есть ли элементы в массиве
-  if (elements.length === 0) {
-    return false;
+function getChageReason(context, uuid) {
+  let changeReason = {
+    auto: false,
+    byLinkedLamp: false,
+    onStart: false,
+    self: false,
+    linkedUUID: undefined,
   }
-  let last = elements[elements.length - 1]
 
-  // Условие 0: Последний элемент начинается с 'HUB[OnStart]'
-  if (last.startsWith('HUB[OnStart]')) {
-    return true;
-  }
-  // Условие 1: Событие пришло от другого устройства, а далее оно управляет целевым
-  if (last.startsWith('CLINK') && elements.length >= 2) {
-    let preLast = elements[elements.length - 2]
-    if (preLast.startsWith('C[' + uuid))
-      return true;
-    if (preLast.startsWith('C[') && !preLast.startsWith('C[' + uuid) && elements.length == 5) {
-      if (elements[2].startsWith('VLINK') && elements[1].startsWith('C[' + uuid)) {
-        return ignoreSyncCallback == true
+  // Разделяем контекст на элементы по символу '<-'
+  const elements = context.toString().split(' <- ')
+  // Проверяем, есть ли элементы в массиве
+  if (elements.length > 0) {
+    let last = elements[elements.length - 1]
+
+    // Условие 0: Последний элемент начинается с 'HUB[OnStart]'
+    if (last.startsWith('HUB[OnStart]')) {
+      changeReason.auto = true
+      changeReason.onStart = true
+    }
+
+    if (last.startsWith('CLINK[')) {
+      changeReason.auto = true
+    }
+
+    // Условие 1: Событие пришло от другого устройства, а далее оно управляет целевым
+    let findCurrent = false
+    elements.forEach((e) => {
+      if (!findCurrent) { if (e.startsWith('C[') && e.startsWith('C[' + uuid)) findCurrent = true }
+      else if (e.startsWith('C[') && !e.startsWith('C[' + uuid)) {
+        let bulbIndex = e.indexOf("Lightbulb")
+        if (bulbIndex > 0) {
+          changeReason.linkedUUID = e.substring(2, bulbIndex - 1)
+          changeReason.byLinkedLamp = true
+        }
       }
+    })
+
+    // Условие 2: Первые три элемента соответствуют шаблону 'LOGIC <- C <- LOGIC'
+    if (elements.length >= 3 &&
+      elements[0].startsWith('LOGIC') &&
+      elements[1].startsWith('C') &&
+      elements[2] == elements[0]) {
+      changeReason.auto = true
+      changeReason.self = true
     }
   }
-
-  // Условие 2: Первые три элемента соответствуют шаблону 'LOGIC <- C <- LOGIC'
-  if (elements.length >= 3 &&
-    elements[0].startsWith('LOGIC') &&
-    elements[1].startsWith('C') &&
-    elements[2].startsWith('LOGIC')) {
-    return true;
-  }
-
-  // Если условия не выполнены, изменение ручное
-  return false;
+  
+  return changeReason;
 }
 
 function debug(format, source, isDebug, arg, context) {

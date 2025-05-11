@@ -378,8 +378,9 @@ function trigger(source, value, variables, options) {
                             stopped = true
                         }
                     } else if (options.positionBehavior == 2) {
+                        let positionState = service.getCharacteristic(HC.PositionState)
                         let targetPositionState = service.getCharacteristic(HC.C_TargetPositionState)
-                        if (targetPositionState) {
+                        if (positionState && targetPositionState && positionState.getValue() != 2) {
                             debug("Одиночное нажатие: установка конечного состояния в положение Остановлено", source, options);
                             targetPositionState.setValue(2)
                             stopped = true
@@ -464,7 +465,7 @@ function trigger(source, value, variables, options) {
                 }
 
                 let defaultMin = Math.max(characteristic.min, serviceCharacteristic.getMinValue());
-                let defaultMax = (characteristic.getMaxValue() != 0) ? Math.min(characteristic.max, characteristic.getMaxValue()) : characteristic.max;
+                let defaultMax = (serviceCharacteristic.getMaxValue() != 0) ? Math.min(characteristic.max, serviceCharacteristic.getMaxValue()) : characteristic.max;
                 const customLimits = parseCustomLimits(customLimitsStr);
                 const characteristicMin = customLimits ? customLimits.min : (defaultMin === 0 && zero ? 1 : defaultMin);
                 const characteristicMax = customLimits ? customLimits.max : defaultMax;
@@ -534,7 +535,7 @@ function trigger(source, value, variables, options) {
             }
 
             let defaultMin = Math.max(characteristic.min, serviceCharacteristic.getMinValue());
-            let defaultMax = (characteristic.getMaxValue() != 0) ? Math.min(characteristic.max, characteristic.getMaxValue()) : characteristic.max;
+            let defaultMax = (serviceCharacteristic.getMaxValue() != 0) ? Math.min(characteristic.max, serviceCharacteristic.getMaxValue()) : characteristic.max;
             const customLimits = parseCustomLimits(options.contactSensorCustomLimits);
             const characteristicMin = customLimits ? customLimits.min : (defaultMin === 0 && options.contactSensorZero ? 1 : defaultMin);
             const characteristicMax = customLimits ? customLimits.max : defaultMax;

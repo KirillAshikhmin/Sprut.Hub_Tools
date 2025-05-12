@@ -82,7 +82,7 @@ function trigger(source, value, variables, options) {
 
             if (!variables.subscribe || variables.subscribed != true) {
                 showSubscribeMessage(options.sensor)
-                let subscribe = Hub.subscribeWithCondition("", "", [HS.TemperatureSensor], [HC.CurrentTemperature], function (sensorSource, sensorValue) {
+                let subscribe = Hub.subscribeWithCondition("", "", [HS.TemperatureSensor, HS.Thermostat], [HC.CurrentTemperature], function (sensorSource, sensorValue) {
                     let service = sensorSource.getService()
                     let isSelected = service.getUUID() == options.sensor
                     if (isSelected && currentTemperature) {

@@ -46,7 +46,7 @@ info = {
 };
 
 // Вывод в лог информационные сообщения о работе сценария
-let debug = true
+let debug = false
 
 function trigger(source, value, variables, options) {
     try {

@@ -14,6 +14,7 @@
 - [Планировщик расширенный](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Scheduler "Планировщик расширенный")
 - [Unit тесты](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/UnitTests "Unit тесты")
 - [🌡️ Виртуальный термостат](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/VirtualThermostat "🌡️ Виртуальный термостат")
+- [💧 Виртуальный гигростат](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/VirtualHygrostat "💧 Виртуальный гигростат")
 
 
 ## Шаблоны:

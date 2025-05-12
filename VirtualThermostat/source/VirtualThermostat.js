@@ -1,5 +1,5 @@
-let servicesList = getServicesByServiceAndCharacteristicType(HS.Switch, HC.On);
-let sensorsServicesList = getServicesByServiceAndCharacteristicType(HS.TemperatureSensor, HC.CurrentTemperature);
+let servicesList = getServicesByServiceAndCharacteristicType([HS.Switch, HS.Outlet], HC.On);
+let sensorsServicesList = getServicesByServiceAndCharacteristicType([HS.TemperatureSensor, HS.Thermostat], HC.CurrentTemperature);
 
 info = {
     name: "🌡️ Виртуальный термостат",
@@ -196,11 +196,11 @@ function getDeviceName(service) {
 }
 
 // подготовка списка характеристик для выбора в настройке логики
-function getServicesByServiceAndCharacteristicType(serviceType, characteristicType) {
+function getServicesByServiceAndCharacteristicType(serviceTypes, characteristicType) {
     let sortedServicesList = []
     let unsortedServicesList = []
     Hub.getAccessories().forEach((a) => {
-        a.getServices().filter((s) => s.getType() == serviceType).forEach((s) => {
+        a.getServices().filter((s) => serviceTypes.indexOf(s.getType()) >= 0).forEach((s) => {
             const c = s.getCharacteristic(characteristicType);
             if (c) {
                 let displayname = getDeviceName(s)

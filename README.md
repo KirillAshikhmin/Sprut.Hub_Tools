@@ -13,6 +13,8 @@
 - [Внешний датчик температуры для термоголовки Aqara E1](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/ExternalTempSensor "Внешний датчик температуры для термоголовки Aqara E1")
 - [Планировщик расширенный](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Scheduler "Планировщик расширенный")
 - [Unit тесты](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/UnitTests "Unit тесты")
+- [🌡️ Виртуальный термостат](https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/VirtualThermostat "🌡️ Виртуальный термостат")
+
 
 ## Шаблоны:
 -

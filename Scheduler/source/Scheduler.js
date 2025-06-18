@@ -232,7 +232,7 @@ function trigger(source, value, variables, options, context) {
     }
 
   } catch (e) {
-    logError("Ошибка в функции trigger: " + e.stack, thermostatService);
+    console.error("Ошибка расширенном планировщике: " + e.stack);
   }
 }
 

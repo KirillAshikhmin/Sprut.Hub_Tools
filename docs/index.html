@@ -335,10 +335,15 @@
                 <li>Если в одном файле содержится несколько шаблонов, то в появившемся окне выберите необходимый (в Sprut.hub с версии 1.12 в одном файле может быть только один шаблон). Для других шаблонов в этом файле операцию повторить</li>
                 <li>Нажмите кнопку "Исправить под требования Sprut.hub" для автоматического исправления шаблона под требования Sprut.hub</li>
                 <li>Нажмите кнопку "Валидировать" для проверки шаблона согласно JSON Schema</li>
-                <li>Исправьте вручную код шаблона, чтобы он проходил валидацию</li>
-                <li>Нажмите кнопку "Форматировать" для форматирования кода</li>
+                <li>Если в шаблоне есть ошибки валидации - нажмите "Попробовать исправить автоматически" и/или исправьте вручную код шаблона, чтобы он проходил валидацию, повторно нажав на кнопку "Валидировать"</li>
                 <li>Скачайте шаблон</li>
+                <li>Обновить шаблон в Sprut.hub.</li>
             </ol>
+        </div>
+        <div class="instructions" style="text-align: center; margin-top: 20px;">
+            Автор Кирилл Ашихмин<br>
+            Исходники: <a href="https://github.com/KirillAshikhmin/Sprut.Hub_Tools" target="_blank">https://github.com/KirillAshikhmin/Sprut.Hub_Tools</a><br>
+            Телеграм: <a href="https://t.me/smart_sputnik" target="_blank">https://t.me/smart_sputnik</a>
         </div>
     </div>
 
@@ -413,7 +418,7 @@
             json.forEach((template, index) => {
                 const option = document.createElement('option');
                 option.value = index;
-                option.text = `Name: ${template.name || 'без имени'}, Manufacturer: ${template.manufacturer || 'без производителя'}, Model: ${template.model || 'без модели'}`;
+                option.text = `Name: ${template.name || ''}, Manufacturer: ${template.manufacturer || 'без производителя'}, Model: ${template.model || 'без модели'}`;
                 select.appendChild(option);
             });
 
@@ -521,37 +526,96 @@
 
         // Подсветка строки с ошибкой
         function highlightErrorLine(path, jsonStr) {
-            let lineNumber = 0;
-            const pathSegments = path.split('.').filter(p => p);
-            let current = JSON.parse(jsonStr);
-            let currentPath = '';
-            let charCount = 0;
+            if (!path) {
+                return 1;
+            }
 
-            for (let segment of pathSegments) {
-                if (segment.includes('[')) {
-                    const [key, index] = segment.split(/\[(\d+)\]/).filter(Boolean);
-                    currentPath += `["${key}"][${index}]`;
-                    current = current[key][parseInt(index)];
-                } else {
-                    currentPath += `["${segment}"]`;
-                    current = current[segment];
+            const lines = jsonStr.split('\n');
+            const segments = path.replace(/^\./, '').split(/\.|\[(\d+)\]/).filter(p => p && p.trim() !== '');
+
+            let searchScope = jsonStr;
+            let totalOffsetChars = 0;
+
+            for (const segment of segments) {
+                const isArrayIndex = /^\d+$/.test(segment);
+
+                if (isArrayIndex) {
+                    const index = parseInt(segment, 10);
+                    const arrayStartMatch = /^\s*\[/.exec(searchScope);
+                    if (!arrayStartMatch) return -1;
+
+                    let searchFrom = arrayStartMatch[0].length;
+                    let elementCount = 0;
+                    let elementStart = -1;
+
+                    while (elementCount <= index) {
+                        let inString = false;
+                        let braceDepth = 0;
+                        let bracketDepth = 0;
+                        let foundStart = false;
+
+                        for (let i = searchFrom; i < searchScope.length; i++) {
+                            if (!foundStart) {
+                                if (/\s|,/.test(searchScope[i])) continue;
+                                elementStart = i;
+                                foundStart = true;
+                            }
+                            
+                            const char = searchScope[i];
+                            const prevChar = i > 0 ? searchScope[i - 1] : null;
+
+                            if (char === '"' && prevChar !== '\\') {
+                                inString = !inString;
+                            }
+
+                            if (!inString) {
+                                if (char === '{') braceDepth++;
+                                else if (char === '}') braceDepth--;
+                                else if (char === '[') bracketDepth++;
+                                else if (char === ']') bracketDepth--;
+
+                                if (braceDepth === 0 && bracketDepth === 0 && (char === ',' || i === searchScope.length - 1)) {
+                                     if (elementCount === index) {
+                                        totalOffsetChars += elementStart;
+                                        searchScope = searchScope.substring(elementStart, i + 1);
+                                    }
+                                    searchFrom = i + 1;
+                                    break;
+                                }
+                                if ( (braceDepth === -1 || bracketDepth === -1) ) {
+                                    if (elementCount === index) {
+                                        totalOffsetChars += elementStart;
+                                        searchScope = searchScope.substring(elementStart, i);
+                                    }
+                                    searchFrom = i;
+                                    break;
+                                }
+                            }
+                             if (i === searchScope.length - 1) { // End of scope
+                                if (elementCount === index) {
+                                    totalOffsetChars += elementStart;
+                                    searchScope = searchScope.substring(elementStart);
+                                }
+                                searchFrom = i + 1;
+                            }
+                        }
+                        elementCount++;
+                    }
+
+                } else { // It's a key
+                    const keyRegex = new RegExp(`"${segment}"\\s*:`);
+                    const match = keyRegex.exec(searchScope);
+                    if (!match) return -1;
+                    totalOffsetChars += match.index + match[0].length;
+                    searchScope = searchScope.substring(match.index + match[0].length);
                 }
             }
 
-            const jsonLines = jsonStr.split('\n');
-            for (let i = 0; i < jsonLines.length; i++) {
-                charCount += jsonLines[i].length + 1;
-                if (jsonLines[i].includes(`"${pathSegments[pathSegments.length - 1]}"`) || (path === '' && i === 0)) {
-                    lineNumber = i;
-                    break;
-                }
+            const lineNumber = jsonStr.substring(0, totalOffsetChars).split('\n').length;
+            if (lineNumber > 0 && lineNumber <= lines.length) {
+                editor.addLineClass(lineNumber - 1, 'background', 'error-line');
             }
-
-            if (lineNumber >= 0) {
-                editor.addLineClass(lineNumber, 'background', 'error-line');
-            }
-
-            return lineNumber + 1;
+            return lineNumber;
         }
 
         // Очистка подсветки ошибок
@@ -610,6 +674,37 @@
             const path = error.dataPath || '';
             const message = error.message;
             let translated = '';
+            
+            let contextPrefix = '';
+            let highlightPath = path;
+
+            const serviceMatch = path.match(/\.services\[(\d+)\]/);
+            if (serviceMatch) {
+                try {
+                    const serviceIndex = parseInt(serviceMatch[1], 10);
+                    const service = json.services[serviceIndex];
+                    if (service && service.name) {
+                        contextPrefix += `В сервисе "${service.name}"`;
+                    } else if (service && service.type) {
+                        contextPrefix += `В сервисе типа "${service.type}"`;
+                    }
+
+                    const charMatch = path.match(/\.characteristics\[(\d+)\]/);
+                    if (charMatch) {
+                        const charIndex = parseInt(charMatch[1], 10);
+                        const characteristic = json.services[serviceIndex].characteristics[charIndex];
+                        if (characteristic && characteristic.type) {
+                            contextPrefix += `, характеристика "${characteristic.type}"`;
+                        }
+                        contextPrefix += ': ';
+                    } else {
+                        contextPrefix += ': ';
+                    }
+                } catch(e) {
+                    contextPrefix = ''; // Reset on error
+                }
+            }
+
             const line = highlightErrorLine(path.replace(/^\./, ''), jsonStr);
 
             switch (error.keyword) {
@@ -636,7 +731,7 @@
                     translated = `Ошибка в ${path}: ${message} (строка ${line})`;
             }
 
-            return { error: error, message: translated, line };
+            return { message: translated, line };
         }
 
         // Автоматическое исправление ошибок JSON Schema
@@ -765,12 +860,24 @@
 
                 let errorOutput = '';
                 if (!valid) {
-                    const schemaErrors = validate.errors
-                        ? validate.errors
+                    const allErrors = validate.errors || [];
+                    // Filter out redundant 'anyOf' errors that have a more specific error reported
+                    const filteredErrors = allErrors.filter(error => {
+                        if (error.keyword !== 'anyOf') {
+                            return true;
+                        }
+                        const path = error.dataPath;
+                        const hasMoreSpecificError = allErrors.some(otherError => {
+                            return otherError !== error && otherError.dataPath.startsWith(path) && otherError.dataPath.length > path.length;
+                        });
+                        return !hasMoreSpecificError;
+                    });
+                    
+                    const schemaErrors = filteredErrors
                             .map(err => translateAjvError(err, json, jsonStr))
                             .map(({ message }) => `<li>${message}</li>`)
                             .join('')
-                        : '';
+                        ;
                     errorOutput += schemaErrors;
                 }
                 if (errors.length > 0) {
@@ -783,11 +890,12 @@
                 if (errorOutput) {
                     document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
                     document.getElementById('errorOutput').innerHTML = `<ul>${errorOutput}</ul>`;
+                    document.getElementById('correctionOutput').textContent = '';
                 } else {
                     document.getElementById('autoFixContainer').innerHTML = '';
-                    document.getElementById('errorOutput').innerHTML = `<ul class="success"><li>JSON валиден по схеме</li></ul>`;
+                    document.getElementById('errorOutput').innerHTML = '';
+                    document.getElementById('correctionOutput').innerHTML = `<ul><li>JSON валиден по схеме</li></ul>`;
                 }
-                document.getElementById('correctionOutput').textContent = '';
                 editor.refresh();
             } catch (e) {
                 const line = e.lineNumber || 1;
@@ -803,50 +911,130 @@
             try {
                 let json = JSON.parse(editor.getValue());
                 selectTemplateWithDropdown(json, (selectedIndex) => {
-                    const selectedTemplate = Array.isArray(json) ? json[selectedIndex] : json;
-                    json = JSON.parse(JSON.stringify(selectedTemplate)); // Глубокая копия
+                    let selectedTemplate;
+                    if (selectedIndex !== undefined && Array.isArray(json)) {
+                        selectedTemplate = json[selectedIndex];
+                    } else if (!Array.isArray(json)) {
+                        selectedTemplate = json;
+                    } else if (selectedIndex === undefined && Array.isArray(json) && json.length === 1) {
+                        selectedTemplate = json[0];
+                    } else {
+                        selectedTemplate = selectedIndex; // Fallback for when the whole object is passed
+                    }
 
+                    if (!selectedTemplate) {
+                        // This case can happen if an array is passed but no selection is made,
+                        // for now, we do nothing. A better implementation might ask the user to select one.
+                        return; 
+                    }
+
+                    const newJson = JSON.parse(JSON.stringify(selectedTemplate)); // Глубокая копия
                     const corrections = [];
 
                     // Преобразование topicSearch в modelId
-                    if ('topicSearch' in json) {
-                        const firstTopicSearch = Array.isArray(json.topicSearch) ? json.topicSearch[0] : json.topicSearch;
-                        if (firstTopicSearch && !json.modelId) {
-                            json.modelId = firstTopicSearch;
-                            corrections.push(`Первое значение topicSearch перенесено в modelId: ${firstTopicSearch}`);
+                    let topicSearchValue = null;
+                    function findAndRemoveTopicSearch(obj) {
+                        let removed = false;
+                        for (const key in obj) {
+                            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                                if (key === 'topicSearch') {
+                                    const value = Array.isArray(obj[key]) ? obj[key][0] : obj[key];
+                                    if (!topicSearchValue && value) { // Сохраняем только первое найденное непустое значение
+                                        topicSearchValue = value;
+                                    }
+                                    delete obj[key];
+                                    removed = true;
+                                } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                                    if (findAndRemoveTopicSearch(obj[key])) {
+                                        removed = true;
+                                    }
+                                }
+                            }
                         }
-                        delete json.topicSearch;
-                        corrections.push(`Поле topicSearch удалено`);
+                        return removed;
                     }
 
+                    if (findAndRemoveTopicSearch(newJson)) {
+                        if (topicSearchValue) {
+                            newJson.modelId = topicSearchValue;
+                            corrections.push(`Значение topicSearch перенесено в modelId и все его вхождения удалены.`);
+                        } else {
+                            corrections.push(`Пустое поле topicSearch удалено из шаблона.`);
+                        }
+                    }
+
+                    // Key renames
+                    let renameCorrectionAdded = false;
+                    const renameMap = {
+                        mapOut: 'outMap',
+                        mapIn: 'map',
+                        inMap: 'map',
+                        funcOut: 'outFunc',
+                        func: 'inFunc',
+                        funcIn: 'inFunc'
+                    };
+
+                    function renameRecursively(obj) {
+                        if (!obj || typeof obj !== 'object') {
+                            return;
+                        }
+                        if (Array.isArray(obj)) {
+                            obj.forEach(renameRecursively);
+                            return;
+                        }
+
+                        let renamedInThisObject = false;
+                        for (const oldKey in renameMap) {
+                            if (obj.hasOwnProperty(oldKey)) {
+                                const newKey = renameMap[oldKey];
+                                obj[newKey] = obj[oldKey];
+                                delete obj[oldKey];
+                                renamedInThisObject = true;
+                            }
+                        }
+
+                        if (renamedInThisObject && !renameCorrectionAdded) {
+                            corrections.push('Выполнено переименование полей (mapOut->outMap, inMap/mapIn->map, funcOut->outFunc, func/funcIn->inFunc)');
+                            renameCorrectionAdded = true;
+                        }
+
+                        for (const key in obj) {
+                            if (obj.hasOwnProperty(key)) {
+                                renameRecursively(obj[key]);
+                            }
+                        }
+                    }
+                    
+                    renameRecursively(newJson);
+
                     // Исправление template
-                    if (typeof json.template === 'string') {
-                        json.template = [json.template];
+                    if (typeof newJson.template === 'string') {
+                        newJson.template = [newJson.template];
                         corrections.push(`Поле template преобразовано в массив`);
                     }
 
                     // Исправление manufacturerId и modelId
-                    if (typeof json.manufacturerId === 'string' && json.manufacturerId.startsWith('(') && json.manufacturerId.endsWith(')')) {
-                        json.manufacturerId = json.manufacturerId.slice(1, -1);
+                    if (typeof newJson.manufacturerId === 'string' && newJson.manufacturerId.startsWith('(') && newJson.manufacturerId.endsWith(')')) {
+                        newJson.manufacturerId = newJson.manufacturerId.slice(1, -1);
                         corrections.push(`Удалены скобки из manufacturerId`);
                     }
-                    if (typeof json.modelId === 'string' && json.modelId.startsWith('(') && json.modelId.endsWith(')')) {
-                        json.modelId = json.modelId.slice(1, -1);
+                    if (typeof newJson.modelId === 'string' && newJson.modelId.startsWith('(') && newJson.modelId.endsWith(')')) {
+                        newJson.modelId = newJson.modelId.slice(1, -1);
                         corrections.push(`Удалены скобки из modelId`);
                     }
 
                     // Исправление link в characteristics
-                    if (json.services && Array.isArray(json.services)) {
-                        json.services.forEach(service => {
+                    if (newJson.services && Array.isArray(newJson.services)) {
+                        newJson.services.forEach(service => {
                             if (service.characteristics && Array.isArray(service.characteristics)) {
                                 service.characteristics.forEach(characteristic => {
                                     if (characteristic.type === 'Float') {
                                         characteristic.type = 'Double';
-                                        corrections.push(`Характеристика ${characteristic.type || 'без типа'}: Тип Float заменён на Double`);
+                                        corrections.push(`Характеристика ${characteristic.type || ''}: Тип Float заменён на Double`);
                                     }
                                     if (characteristic.link && !Array.isArray(characteristic.link)) {
                                         characteristic.link = [characteristic.link];
-                                        corrections.push(`Поле link в характеристике ${characteristic.type || 'без типа'} преобразовано в массив`);
+                                        corrections.push(`Поле link в характеристике ${characteristic.type || ''} преобразовано в массив`);
                                     }
                                 });
                             }
@@ -854,20 +1042,58 @@
                     }
 
                     // Исправление link и типа в options
-                    if (json.options && Array.isArray(json.options)) {
-                        json.options.forEach(option => {
+                    if (newJson.options && Array.isArray(newJson.options)) {
+                        newJson.options.forEach(option => {
                             if (option.type === 'Float') {
                                 option.type = 'Double';
-                                corrections.push(`Опция ${option.name || 'без имени'}: Тип Float заменён на Double`);
+                                corrections.push(`Опция ${option.name || ''}: Тип Float заменён на Double`);
                             }
                             if (option.link && !Array.isArray(option.link)) {
                                 option.link = [option.link];
-                                corrections.push(`Поле link в опции "${option.name || 'без имени'}" преобразовано в массив`);
+                                corrections.push(`Поле link в опции "${option.name || ''}" преобразовано в массив`);
                             }
                         });
                     }
 
-                    editor.setValue(JSON.stringify(json, null, 2));
+                    // Исправление link в init
+                    let initLinkCorrectionAdded = false;
+                    if (newJson.init && Array.isArray(newJson.init)) {
+                        newJson.init.forEach((initCmd) => {
+                            if (initCmd.link && !Array.isArray(initCmd.link)) {
+                                initCmd.link = [initCmd.link];
+                                if (!initLinkCorrectionAdded) {
+                                    corrections.push(`Поле link в командах инициализации (init) преобразовано в массив`);
+                                    initLinkCorrectionAdded = true;
+                                }
+                            }
+                        });
+                    }
+
+                    // Reorder keys for better readability before displaying
+                    const keyOrder = [
+                        'name', 'description', 'optional', 'comment', 'overview', 'room', 
+                        'manufacturer', 'model', 'manufacturerId', 'modelId', 'status', 
+                        'catalogId', 'issue', 'url', 'ali', 'ali2', 'minRevision', 
+                        'maxRevision', 'powerMode', 'otaSupport', 'otaReInitAfterUpdate', 
+                        'imageType', 'date', 'TODO', 'visible', 'template', 'init', 
+                        'services', 'options'
+                    ];
+
+                    const orderedJson = {};
+                    const remainingKeys = { ...newJson }; // Create a shallow copy to track remaining keys
+
+                    // Add keys in the desired order
+                    for (const key of keyOrder) {
+                        if (Object.prototype.hasOwnProperty.call(newJson, key)) {
+                            orderedJson[key] = newJson[key];
+                            delete remainingKeys[key]; // Remove the key as it's been handled
+                        }
+                    }
+
+                    // Append any remaining keys
+                    Object.assign(orderedJson, remainingKeys);
+
+                    editor.setValue(JSON.stringify(orderedJson, null, 2));
                     document.getElementById('errorOutput').textContent = '';
                     document.getElementById('correctionOutput').innerHTML = corrections.length > 0
                         ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`

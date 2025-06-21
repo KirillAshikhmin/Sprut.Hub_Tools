@@ -1127,12 +1127,7 @@
         // Исправление JSON под требования Sprut.hub
         function correctJson() {
             try {
-                const value = editor.getValue();
-                if (!value.trim()) {
-                    document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
-                    return;
-                }
-                let json = JSON.parse(value);
+                let json = JSON.parse(editor.getValue());
                 selectTemplateWithDropdown(json, (selectedIndex) => {
                     const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
                     

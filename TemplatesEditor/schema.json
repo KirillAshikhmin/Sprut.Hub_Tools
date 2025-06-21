@@ -1,0 +1,1930 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "link": {
+      "type": "object",
+      "properties": {
+        "scale": {
+          "type": "number"
+        },
+        "events": {
+          "type": "boolean"
+        },
+        "data": {
+          "type": "string"
+        },
+        "map": {
+          "type": "object",
+          "patternProperties": {
+            ".*": {
+              "type": [
+                "boolean",
+                "number",
+                "integer",
+                "string",
+                "object"
+              ]
+            }
+          }
+        },
+        "outMap": {
+          "type": "object",
+          "patternProperties": {
+            ".*": {
+              "type": [
+                "boolean",
+                "number",
+                "integer",
+                "string",
+                "object"
+              ]
+            }
+          }
+        },
+        "setProp": {
+          "type": "string"
+        },
+        "getProp": {
+          "type": "string"
+        },
+        "inFunc": {
+          "type": "string"
+        },
+        "outFunc": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "in": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Integer",
+            "String",
+            "Boolean",
+            "Double",
+            "Long",
+            "Color",
+            "HSV",
+            "RGB"
+          ],
+          "additionalItems": false,
+          "additionalProperties": false
+        },
+        "subType": {
+          "type": "string"
+        },
+        "topicGet": {
+          "type": "string"
+        },
+        "topicSet": {
+          "type": "string"
+        },
+        "checkValue": {
+          "type": "boolean"
+        },
+        "minValue": {
+          "type": "integer"
+        },
+        "maxValue": {
+          "type": "integer"
+        },
+        "minStep": {
+          "type": "number"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "HSV",
+            "RGB",
+            "RGBW",
+            "DEC",
+            "RRGGBB",
+            "#RRGGBB",
+            "WWRRGGBB",
+            "#WWRRGGBB",
+            "RRGGBBWW",
+            "#RRGGBBWW",
+            "WBCovering"
+          ]
+        },
+        "getBLE": {
+          "type": "string"
+        },
+        "getStatus": {
+          "type": "string"
+        },
+        "set": {
+          "type": "object",
+          "patternProperties": {
+            "method": {
+              "type": "string"
+            },
+            "param": {
+              "type": "string"
+            },
+            ".*": {
+              "type": [
+                "boolean",
+                "number",
+                "integer",
+                "string",
+                "object"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "param"
+          ]
+        },
+        "get": {
+          "type": "object",
+          "patternProperties": {
+            "method": {
+              "type": "string"
+            },
+            "param": {
+              "type": "string"
+            },
+            ".*": {
+              "type": [
+                "boolean",
+                "number",
+                "integer",
+                "string",
+                "object"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "param"
+          ]
+        },
+        "getMethod": {
+          "type": "string"
+        },
+        "setMethod": {
+          "type": "string"
+        },
+        "getCommand": {
+          "type": "string"
+        },
+        "setCommand": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "integer"
+        },
+        "cluster": {
+          "type": "string"
+        },
+        "attribute": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "sendCommand": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "boolean"
+        },
+        "group": {
+          "type": "integer"
+        },
+        "manufacturerCode": {
+          "type": "integer"
+        },
+        "param": {
+          "type": [
+            "boolean",
+            "number",
+            "integer",
+            "string",
+            "object"
+          ]
+        },
+        "output": {
+          "type": "boolean"
+        },
+        "extAttribute": {
+          "type": "string"
+        },
+        "ClusterSpecificCommand": {
+          "type": "boolean"
+        },
+        "frameType": {
+          "type": "integer"
+        },
+        "waitResponse": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean",
+          "default": false
+        },
+        "write": {
+          "type": "boolean",
+          "default": false
+        },
+        "value": {
+          "type": "string"
+        },
+        "address": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "function": {
+          "type": "string"
+        },
+        "pollingTime": {
+          "type": "integer"
+        },
+        "length": {
+          "type": "integer"
+        },
+        "byteOrder": {
+          "type": "string"
+        },
+        "class": {
+          "type": "string"
+        },
+        "delimiter": {
+          "type": "string"
+        },
+        "bitmask": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "dependencies": {
+        "id": [
+          "type"
+        ],
+        "set": [
+          "type"
+        ],
+        "in": [
+          "action"
+        ],
+        "getProp": [
+          "type"
+        ],
+        "setProp": [
+          "type"
+        ],
+        "getBLE": [
+          "type"
+        ],
+        "getStatus": [
+          "type"
+        ],
+        "topicGet": [
+          "type"
+        ]
+      },
+      "additionalProperties": false,
+      "additionalItems": false
+    },
+    "optional": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "link": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "Integer",
+                      "String",
+                      "Boolean",
+                      "Double"
+                    ]
+                  },
+                  "address": {
+                    "type": "integer"
+                  },
+                  "function": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "logics": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "LowBatteryFromCurrentLevel",
+            "FilterChangeIndicationFromFilterLifeLevel",
+            "AirQualityFromAQIDensity",
+            "AirQualityFromFormaldehydeDensity",
+            "AirQualityFromPM10Density",
+            "AirQualityFromPM2_5Density",
+            "AirQualityFromVOCDensity",
+            "CarbonDioxideDetectedFromCarbonDioxideLevel",
+            "CurrentDoorStateFromTarget",
+            "TimerBasedPositionState",
+            "TimerBasedDoorState",
+            "VirtualButton",
+            "CurrentHeaterCoolerFromTarget",
+            "CurrentHeatingCoolingFromTarget",
+            "CurrentLockStateFromTarget",
+            "CurrentPositionFromTarget",
+            "CurrentPositionFromPositionState",
+            "TargetPositionFromCurrent",
+            "CurrentSecurityStateFromTarget",
+            "IncrementByIncomingValue",
+            "InUseFromActive",
+            "GenericThermostat",
+            "GenericHeaterCooler",
+            "GenericHumidifierDehumidifier",
+            "MotionDetectedFromCurrentMotionLevel",
+            "SpeedControlledFan",
+            "NoiseDetectedFromCurrentNoiseLevel",
+            "LightbulbControl"
+          ]
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "WarmingUpTime": {
+              "type": "string"
+            },
+            "MovingTime": {
+              "type": "string"
+            },
+            "DoubleClickTime": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "SwitchOffTime": {
+          "type": "number"
+        },
+        "SwitchOffDelay": {
+          "type": "number"
+        },
+        "Inversed": {
+          "type": "boolean"
+        },
+        "ShowAllEvents": {
+          "type": "boolean"
+        },
+        "Offset": {
+          "type": "number"
+        },
+        "LastValue": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "characteristic": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "validValues": {
+          "type": "string"
+        },
+        "minValue": {
+          "type": "number"
+        },
+        "maxValue": {
+          "type": "number"
+        },
+        "minStep": {
+          "type": "number"
+        },
+        "read": {
+          "type": "boolean",
+          "default": false
+        },
+        "write": {
+          "type": "boolean",
+          "default": false
+        },
+        "optional": {
+          "type": "boolean",
+          "default": true
+        },
+        "version": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean",
+          "default": false
+        },
+        "option": {
+          "type": "boolean",
+          "default": true,
+          "description": "hide characteristic if true"
+        },
+        "value": {
+          "type": [
+            "boolean",
+            "number",
+            "integer",
+            "string"
+          ]
+        },
+        "data": {
+          "$ref": "#/definitions/data"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/link"
+              }
+            }
+          ]
+        },
+        "unit": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "init": {
+          "type": "boolean",
+          "enum": [
+            true
+          ],
+          "default": true
+        },
+        "inputType": {
+          "type": "string",
+          "enum": [
+            "GROUP",
+            "FOLDER",
+            "BUTTON",
+            "NUMBER",
+            "TEXT",
+            "PASSWORD",
+            "CHECKBOX",
+            "STATUS",
+            "URL",
+            "INFO",
+            "EMAIL",
+            "HTML",
+            "IP_ADDR",
+            "PINCODE",
+            "QR_CODE",
+            "LIST"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "AccessoryFlags",
+            "Active",
+            "ActiveIdentifier",
+            "AdministratorOnlyAccess",
+            "AudioFeedback",
+            "AirParticulateDensity",
+            "AirParticulateSize",
+            "AirQuality",
+            "BatteryLevel",
+            "Brightness",
+            "ButtonEvent",
+            "CarbonMonoxideLevel",
+            "CarbonMonoxidePeakLevel",
+            "CarbonDioxideDetected",
+            "CarbonDioxideLevel",
+            "CarbonDioxidePeakLevel",
+            "CarbonMonoxideDetected",
+            "ChargingState",
+            "CoolingThresholdTemperature",
+            "ColorTemperature",
+            "ContactSensorState",
+            "CurrentAmbientLightLevel",
+            "CurrentHorizontalTiltAngle",
+            "CurrentAirPurifierState",
+            "CurrentSlatState",
+            "CurrentPosition",
+            "CurrentVerticalTiltAngle",
+            "CurrentHumidifierDehumidifierState",
+            "CurrentDoorState",
+            "CurrentFanState",
+            "CurrentHeatingCoolingState",
+            "CurrentHeaterCoolerState",
+            "CurrentRelativeHumidity",
+            "CurrentTemperature",
+            "CurrentTiltAngle",
+            "DigitalZoom",
+            "FilterLifeLevel",
+            "FilterChangeIndication",
+            "FirmwareRevision",
+            "HardwareRevision",
+            "SoftwareRevision",
+            "HeatingThresholdTemperature",
+            "HoldPosition",
+            "Hue",
+            "Identify",
+            "ImageRotation",
+            "ImageMirroring",
+            "InUse",
+            "IsConfigured",
+            "LeakDetected",
+            "LockControlPoint",
+            "LockCurrentState",
+            "LockLastKnownAction",
+            "LockManagementAutoSecurityTimeout",
+            "LockPhysicalControls",
+            "LockTargetState",
+            "Logs",
+            "Manufacturer",
+            "Model",
+            "MotionDetected",
+            "Mute",
+            "Name",
+            "NightVision",
+            "NitrogenDioxideDensity",
+            "ObstructionDetected",
+            "PM2_5Density",
+            "OccupancyDetected",
+            "OpticalZoom",
+            "OutletInUse",
+            "On",
+            "OzoneDensity",
+            "PM10Density",
+            "PositionState",
+            "ProgramMode",
+            "ProgrammableSwitchEvent",
+            "RelativeHumidityDehumidifierThreshold",
+            "RelativeHumidityHumidifierThreshold",
+            "RemainingDuration",
+            "ResetFilterIndication",
+            "RotationDirection",
+            "RotationSpeed",
+            "Saturation",
+            "SecuritySystemAlarmType",
+            "SecuritySystemCurrentState",
+            "SecuritySystemTargetState",
+            "SelectedAudioStreamConfiguration",
+            "SelectedRTPStreamConfiguration",
+            "SerialNumber",
+            "ServiceLabelIndex",
+            "ServiceLabelNamespace",
+            "SetupDataStreamTransport",
+            "SetupEndpoints",
+            "SiriInputType",
+            "SlatType",
+            "SmokeDetected",
+            "StatusActive",
+            "StatusFault",
+            "StatusJammed",
+            "StatusLowBattery",
+            "StatusTampered",
+            "StreamingStatus",
+            "SupportedAudioStreamConfiguration",
+            "SupportedDataStreamTransportConfiguration",
+            "SupportedRTPConfiguration",
+            "SupportedVideoStreamConfiguration",
+            "SulphurDioxideDensity",
+            "SwingMode",
+            "TargetAirPurifierState",
+            "TargetFanState",
+            "TargetTiltAngle",
+            "SetDuration",
+            "TargetControlSupportedConfiguration",
+            "TargetControlList",
+            "TargetHorizontalTiltAngle",
+            "TargetHeaterCoolerState",
+            "TargetHumidifierDehumidifierState",
+            "TargetPosition",
+            "TargetDoorState",
+            "TargetHeatingCoolingState",
+            "TargetRelativeHumidity",
+            "TargetTemperature",
+            "TemperatureDisplayUnits",
+            "TargetVerticalTiltAngle",
+            "ValveType",
+            "Version",
+            "VOCDensity",
+            "Volume",
+            "WaterLevel",
+            "CurrentMediaState",
+            "RemoteKey",
+            "PictureMode",
+            "ConfiguredName",
+            "PasswordSetting",
+            "AccessControlLevel",
+            "Identifier",
+            "SleepDiscoveryMode",
+            "VolumeControlType",
+            "VolumeSelector",
+            "InputSourceType",
+            "InputDeviceType",
+            "ClosedCaptions",
+            "PowerModeSelection",
+            "TargetVisibilityState",
+            "CurrentVisibilityState",
+            "DisplayOrder",
+            "TargetMediaState",
+            "DataStreamHAPTransport",
+            "DataStreamHAPTransportInterrupt",
+            "RelayControlPoint",
+            "RelayEnabled",
+            "RelayState",
+            "AppMatchingIdentifier",
+            "CharacteristicValueTransitionControl",
+            "SupportedCharacteristicValueTransitionConfiguration",
+            "SetupTransferTransport",
+            "SupportedTransferTransportConfiguration",
+            "SupportedCameraRecordingConfiguration",
+            "SupportedVideoRecordingConfiguration",
+            "SupportedAudioRecordingConfiguration",
+            "SelectedCameraRecordingConfiguration",
+            "NetworkClientProfileControl",
+            "NetworkClientStatusControl",
+            "RouterStatus",
+            "SupportedRouterConfiguration",
+            "WANConfigurationList",
+            "WANStatusList",
+            "ManagedNetworkEnable",
+            "HomeKitCameraActive",
+            "ThirdPartyCameraActive",
+            "CameraOperatingModeIndicator",
+            "WiFiSatelliteStatus",
+            "NetworkAccessViolationControl",
+            "ProductData",
+            "WakeConfiguration",
+            "EventSnapshotsActive",
+            "DiagonalFieldOfView",
+            "PeriodicSnapshotsActive",
+            "RecordingAudioActive",
+            "ManuallyDisabled",
+            "VideoAnalysisActive",
+            "CurrentTransport",
+            "WiFiCapabilities",
+            "WiFiConfigurationControl",
+            "OperatingStateResponse",
+            "SupportedFirmwareUpdateConfiguration",
+            "FirmwareUpdateReadiness",
+            "FirmwareUpdateStatus",
+            "SupportedDiagnosticsSnapshot",
+            "Ping",
+            "EventRetransmissionMaximum",
+            "EventTransmissionCounters",
+            "ReceivedSignalStrengthIndication",
+            "SignalToNoiseRatio",
+            "TransmitPower",
+            "MaximumTransmitPower",
+            "ReceiverSensitivity",
+            "CCASignalDetectThreshold",
+            "CCAEnergyDetectThreshold",
+            "MACRetransmissionMaximum",
+            "MACTransmissionCounters",
+            "CharacteristicValueActiveTransitionCount",
+            "ThreadNodeCapabilities",
+            "ThreadStatus",
+            "ThreadControlPoint",
+            "ThreadOpenThreadVersion",
+            "PairSetup",
+            "PairVerify",
+            "PairingFeatures",
+            "PairingPairings",
+            "C_Room",
+            "C_CurrentAtmosphericPressure",
+            "C_CurrentNoiseLevel",
+            "C_NoiseDetected",
+            "C_Volt",
+            "C_Ampere",
+            "C_Watt",
+            "C_VoltAmpere",
+            "C_KiloWattHour",
+            "C_KiloVoltAmpereHour",
+            "C_CurrentUltraviolet",
+            "C_TargetPositionState",
+            "C_VisibleInRoom",
+            "C_Favorite",
+            "C_Sequence",
+            "C_CurrentMotionLevel",
+            "C_PulseCount",
+            "C_Status",
+            "C_CubicMeter",
+            "C_Angle",
+            "C_Frequency",
+            "C_VoltAmpereReactive",
+            "C_KiloVoltAmpereReactiveHour",
+            "C_PowerFactor",
+            "C_FanSpeed",
+            "C_FormaldehydeDensity",
+            "C_AQIDensity",
+            "C_Revision",
+            "C_TimeZone",
+            "C_Language",
+            "C_Endpoint",
+            "C_GasDetected",
+            "C_LowExplosionLevel",
+            "C_DecibelMilliWatts",
+            "C_GasType",
+            "C_Distance",
+            "C_Intensity",
+            "C_PM1_0Density",
+            "C_GigaCalorie",
+            "C_Scan",
+            "C_Receive",
+            "C_Transmit",
+            "C_Integer",
+            "C_Double",
+            "C_Boolean",
+            "C_String",
+            "Integer",
+            "String",
+            "Boolean",
+            "Double",
+            "Long",
+            "Color",
+            "HSV",
+            "RGB",
+            "GenericBase64Tlv8",
+            "GenericBoolean",
+            "GenericDouble",
+            "GenericInteger",
+            "GenericString"
+          ]
+        },
+        "options": {
+          "type": "array"
+        },
+        "radix": {
+          "type": "integer"
+        },
+        "overview": {
+          "type": "string"
+        },
+        "bitmask": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "dependencies": {
+        "values": [
+          "value"
+        ]
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "minRevision": {
+      "type": "integer"
+    },
+    "maxRevision": {
+      "type": "integer"
+    },
+    "manufacturer": {
+      "type": "string",
+      "description": "Manufacturer"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model"
+    },
+    "manufacturerId": {
+      "type": "string",
+      "description": "Manufacturer ID"
+    },
+    "modelId": {
+      "type": "string",
+      "description": "Model ID"
+    },
+    "powerMode": {
+      "type": "string",
+      "enum": [
+        "POWER",
+        "BATTERY",
+        "BATTERY_RECEIVER"
+      ]
+    },
+    "otaSupport": {
+      "type": "boolean"
+    },
+    "imageType": {
+      "type": "integer"
+    },
+    "optional": {
+      "type": [
+        "string",
+        "object"
+      ]
+    },
+    "comment": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string"
+    },
+    "overview": {
+      "type": "string"
+    },
+    "catalogId": {
+      "type": "integer",
+      "description": "Catalog ID"
+    },
+    "url": {
+      "type": "string"
+    },
+    "ali": {
+      "type": "string"
+    },
+    "ali2": {
+      "type": "string"
+    },
+    "TODO": {
+      "type": "string"
+    },
+    "otaReInitAfterUpdate": {
+      "type": "boolean"
+    },
+    "issue": {
+      "type": "string",
+      "description": "Issue"
+    },
+    "status": {
+      "type": "string",
+      "description": "Status"
+    },
+    "room": {
+      "type": "string"
+    },
+    "visible": {
+      "type": "boolean"
+    },
+    "template": {
+      "type": [
+        "array"
+      ],
+      "description": "Template",
+      "items": {
+        "type": "string"
+      }
+    },
+    "init": {
+      "type": "array",
+      "description": "Init",
+      "items": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "object",
+            "description": "for_modbus",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "String",
+                  "Integer"
+                ]
+              },
+              "address": {
+                "type": "integer"
+              },
+              "function": {
+                "type": "string",
+                "enum": [
+                  "Holding",
+                  "Coil",
+                  "Input"
+                ]
+              },
+              "length": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "firmware": {
+            "type": "object",
+            "description": "for_modbus",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "String",
+                  "Integer"
+                ]
+              },
+              "address": {
+                "type": "integer"
+              },
+              "function": {
+                "type": "string",
+                "enum": [
+                  "Holding",
+                  "Input"
+                ]
+              },
+              "length": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "link": {
+            "type": "array",
+            "description": "for_zigbee",
+            "items": {
+              "type": "object",
+              "properties": {
+                "endpoint": {
+                  "type": "integer"
+                },
+                "cluster": {
+                  "type": "string"
+                },
+                "output": {
+                  "type": "boolean"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "scale": {
+                  "type": "number"
+                },
+                "attribute": {
+                  "type": [
+                    "string",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "manufacturerCode": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "report": {
+            "type": [
+              "boolean",
+              "integer",
+              "object"
+            ],
+            "description": "for_zigbee",
+            "properties": {
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "change": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          },
+          "bind": {
+            "type": "boolean",
+            "default": true,
+            "description": "for_zigbee"
+          },
+          "bindGroup": {
+            "type": "boolean",
+            "default": true,
+            "description": "for_zigbee"
+          },
+          "init": {
+            "type": "boolean",
+            "description": "for_zigbee"
+          },
+          "name": {
+            "type": "string",
+            "description": "for_zigbee"
+          },
+          "nodes": {
+            "type": "integer",
+            "description": "for_zwave"
+          },
+          "version": {
+            "type": "string",
+            "description": "for_zwave"
+          },
+          "statusUnavailable": {
+            "default": true,
+            "type": "boolean",
+            "description": "for_zigbee"
+          },
+          "otaVersionFromApplicationVersion": {
+            "default": true,
+            "type": "boolean",
+            "description": "for_zigbee"
+          },
+          "id": {
+            "type": "number",
+            "description": "for_zigbee"
+          },
+          "association": {
+            "type": "string",
+            "description": "for_zigbee"
+          },
+          "commands": {
+            "type": "array",
+            "description": "for_zigbee",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Alarm",
+                "Basic",
+                "Battery",
+                "CentralScene",
+                "Meter",
+                "SensorAlarm",
+                "SensorBinary",
+                "SensorMultiLevel",
+                "SwitchMultiLevel",
+                "SwitchColor",
+                "SwitchBinary"
+              ]
+            },
+            "additionalItems": false
+          },
+          "visible": {
+            "description": "for_zigbee",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "for_zigbee",
+            "type": "string"
+          },
+          "controller": {
+            "description": "for_zwave",
+            "type": "boolean"
+          },
+          "overview": {
+            "description": "for_zwave",
+            "type": "string"
+          },
+          "optional": {
+            "description": "for_zigbee",
+            "type": "boolean"
+          },
+          "type": {
+            "description": "for_xiaomi,for_zwave",
+            "type": "string",
+            "enum": [
+              "MaxReadLimit",
+              "CustomReadPriority",
+              "String"
+            ]
+          },
+          "value": {
+            "description": "for_xiaomi,for_zwave",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "method": {
+            "description": "for_xiaomi",
+            "type": "string"
+          },
+          "params": {
+            "description": "for_xiaomi",
+            "type": "string"
+          },
+          "tuya": {
+            "description": "for_xiaomi",
+            "type": "string"
+          },
+          "zcl": {
+            "description": "for_xiaomi",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "endpoint": {
+                  "type": "integer"
+                },
+                "cluster": {
+                  "type": "string"
+                },
+                "attribute": {
+                  "type": "string"
+                },
+                "scale": {
+                  "type": "number"
+                },
+                "manufacturerCode": {
+                  "type": "number"
+                },
+                "output": {
+                  "type": "boolean"
+                },
+                "zclDataType": {
+                  "type": "string",
+                  "enum": [
+                    "ENUMERATION_8_BIT",
+                    "SIGNED_8_BIT_INTEGER",
+                    "UNSIGNED_8_BIT_INTEGER",
+                    "ENUMERATION_16_BIT",
+                    "SIGNED_16_BIT_INTEGER",
+                    "UNSIGNED_16_BIT_INTEGER",
+                    "ENUMERATION_32_BIT",
+                    "SIGNED_32_BIT_INTEGER",
+                    "UNSIGNED_32_BIT_INTEGER",
+                    "UNSIGNED_48_BIT_INTEGER",
+                    "CHARACTER_STRING",
+                    "BOOLEAN",
+                    "FLOAT_32_BIT",
+                    "AQARA_UNSIGNED_8_BIT_INTEGER",
+                    "AQARA_UNSIGNED_16_BIT_INTEGER",
+                    "AQARA_UNSIGNED_32_BIT_INTEGER",
+                    "AQARA_OCTET_STRING",
+                    "TUYA_BOOLEAN",
+                    "TUYA_32_BIT_INTEGER",
+                    "BITMAP_16_BIT"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "services": {
+      "type": "array",
+      "description": "Services",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name"
+          },
+          "version": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean",
+            "default": false,
+            "description": "Visible"
+          },
+          "endpoint": {
+            "type": "integer",
+            "default": 1,
+            "description": "Endpoint"
+          },
+          "optional": {
+            "$ref": "#/definitions/optional"
+          },
+          "logics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/logics"
+            }
+          },
+          "linkedServices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "AccessoryInformation",
+              "AirPurifier",
+              "AirQualitySensor",
+              "AudioStreamManagement",
+              "BatteryService",
+              "CameraRTPStreamManagement",
+              "CarbonDioxideSensor",
+              "CarbonMonoxideSensor",
+              "ContactSensor",
+              "DataStreamTransportManagement",
+              "Door",
+              "Doorbell",
+              "FanBasic",
+              "Fan",
+              "Faucet",
+              "FilterMaintenance",
+              "GarageDoorOpener",
+              "HAPProtocolInformation",
+              "HeaterCooler",
+              "HumidifierDehumidifier",
+              "HumiditySensor",
+              "IrrigationSystem",
+              "LeakSensor",
+              "Lightbulb",
+              "LightSensor",
+              "LockManagement",
+              "LockMechanism",
+              "Microphone",
+              "MotionSensor",
+              "OccupancySensor",
+              "Outlet",
+              "SecuritySystem",
+              "ServiceLabel",
+              "Siri",
+              "Slat",
+              "SmokeSensor",
+              "Speaker",
+              "StatelessProgrammableSwitch",
+              "Switch",
+              "TargetControl",
+              "TargetControlManagement",
+              "TemperatureSensor",
+              "Thermostat",
+              "Valve",
+              "Window",
+              "WindowCovering",
+              "CloudRelay",
+              "TransferTransportManagement",
+              "CameraRecordingManagement",
+              "WiFiRouter",
+              "CameraOperatingMode",
+              "PowerManagement",
+              "WiFiTransport",
+              "WiFiSatellite",
+              "Diagnostics",
+              "ThreadTransport",
+              "Television",
+              "InputSource",
+              "TelevisionSpeaker",
+              "AccessControl",
+              "CameraControl",
+              "C_AccessoryExtInfo",
+              "C_AtmosphericPressureSensor",
+              "C_NoiseSensor",
+              "C_VoltMeter",
+              "C_AmpereMeter",
+              "C_WattMeter",
+              "C_VoltAmpereMeter",
+              "C_KiloWattHourMeter",
+              "C_KiloVoltAmpereHourMeter",
+              "C_UltravioletSensor",
+              "C_PulseMeter",
+              "C_WaterMeter",
+              "C_VoltPeakMeter",
+              "C_AngleMeter",
+              "C_VoltAngleMeter",
+              "C_PhaseAngleMeter",
+              "C_VoltAmpereReactiveMeter",
+              "C_KiloVoltAmpereReactiveHourMeter",
+              "C_PowerFactorMeter",
+              "C_FrequencyMeter",
+              "C_AmperePeakMeter",
+              "C_Repeater",
+              "C_Option",
+              "C_GasSensor",
+              "C_DistanceSensor",
+              "C_TiltAngle",
+              "C_Massage",
+              "C_PetFeeder",
+              "C_GasMeter",
+              "C_HeatMeter",
+              "C_Transceiver",
+              "C_TemperatureControl",
+              "GenericService"
+            ]
+          },
+          "characteristics": {
+            "type": "array",
+            "description": "Characteristics",
+            "items": {
+              "type": "object",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/characteristic"
+                },
+                {
+                  "description": "C_FanSpeed map",
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "C_FanSpeed"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "map": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "enum": [
+                                    "AUTO",
+                                    "QUIET",
+                                    "LOW",
+                                    "MEDIUM",
+                                    "HIGH",
+                                    "TURBO",
+                                    "0",
+                                    "1",
+                                    "2",
+                                    "3",
+                                    "4",
+                                    "5"
+                                  ]
+                                },
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "map": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "enum": [
+                                      "AUTO",
+                                      "QUIET",
+                                      "LOW",
+                                      "MEDIUM",
+                                      "HIGH",
+                                      "TURBO",
+                                      "0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5"
+                                    ]
+                                  },
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "map": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number",
+                                    "integer",
+                                    "object"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "map": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number",
+                                      "integer",
+                                      "object"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "description": "C_FanSpeed outMap",
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "C_FanSpeed"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "outMap": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "enum": [
+                                    "AUTO",
+                                    "QUIET",
+                                    "LOW",
+                                    "MEDIUM",
+                                    "HIGH",
+                                    "TURBO",
+                                    "0",
+                                    "1",
+                                    "2",
+                                    "3",
+                                    "4",
+                                    "5"
+                                  ]
+                                },
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "outMap": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "enum": [
+                                      "AUTO",
+                                      "QUIET",
+                                      "LOW",
+                                      "MEDIUM",
+                                      "HIGH",
+                                      "TURBO",
+                                      "0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5"
+                                    ]
+                                  },
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "outMap": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number",
+                                    "integer",
+                                    "object"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "outMap": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number",
+                                      "integer",
+                                      "object"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "description": "Active map",
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "Active"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "map": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "enum": [
+                                    "INACTIVE",
+                                    "ACTIVE",
+                                    "0",
+                                    "1",
+                                    "NONE",
+                                    "permadm",
+                                    "permadm1",
+                                    "permadm2",
+                                    "permadm3"
+                                  ]
+                                },
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "map": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "enum": [
+                                      "INACTIVE",
+                                      "ACTIVE",
+                                      "0",
+                                      "1",
+                                      "NONE",
+                                      "permadm",
+                                      "permadm1",
+                                      "permadm2",
+                                      "permadm3"
+                                    ]
+                                  },
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "description": "Active outMap",
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "Active"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "link": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "outMap": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "enum": [
+                                    "INACTIVE",
+                                    "ACTIVE",
+                                    "0",
+                                    "1",
+                                    "NONE",
+                                    "permadm",
+                                    "permadm1",
+                                    "permadm2",
+                                    "permadm3"
+                                  ]
+                                },
+                                "additionalProperties": {
+                                  "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "outMap": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "enum": [
+                                      "INACTIVE",
+                                      "ACTIVE",
+                                      "0",
+                                      "1",
+                                      "NONE",
+                                      "permadm",
+                                      "permadm1",
+                                      "permadm2",
+                                      "permadm3"
+                                    ]
+                                  },
+                                  "additionalProperties": {
+                                    "type": [
+                                      "string",
+                                      "boolean",
+                                      "number"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "option": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "additionalItems": false,
+        "required": [
+          "type"
+        ],
+        "dependencies": {
+          "characteristics": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "not": {
+                      "properties": {
+                        "characteristics": {
+                          "contains": {
+                            "properties": {
+                              "type": {
+                                "const": "Hue"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "characteristics": {
+                        "contains": {
+                          "properties": {
+                            "type": {
+                              "const": "Saturation"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "not": {
+                      "properties": {
+                        "characteristics": {
+                          "contains": {
+                            "properties": {
+                              "type": {
+                                "const": "Saturation"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "characteristics": {
+                        "contains": {
+                          "properties": {
+                            "type": {
+                              "const": "Hue"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "options": {
+      "type": "array",
+      "description": "Options",
+      "items": {
+        "$ref": "#/definitions/characteristic"
+      }
+    }
+  },
+  "dependencies": {
+    "manufacturer": {
+      "required": [
+        "modelId"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

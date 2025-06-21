@@ -1,0 +1,911 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprut.hub. Шаблоны. Редактор и валидатор</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldgutter.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldgutter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/brace-fold.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/6.12.6/ajv.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0 40px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.light {
+            background-color: #f0f0f0;
+            color: #000;
+        }
+        body.dark {
+            background-color: #1e1e1e;
+            color: #fff;
+        }
+        .container {
+            max-width: 100%;
+            margin: 20px auto;
+            flex: 1;
+        }
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header-row h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .theme-toggle {
+            margin-left: 20px;
+        }
+        #themeSelect {
+            padding: 8px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            cursor: pointer;
+        }
+        body.dark #themeSelect {
+            background-color: #333;
+            border-color: #555;
+            color: #fff;
+        }
+        .editor-container {
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        body.dark .editor-container {
+            border-color: #444;
+        }
+        .CodeMirror {
+            height: 70vh !important;
+            width: 100% !important;
+            box-sizing: border-box;
+        }
+        .button-row-top, .button-row-bottom {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .left-buttons, .right-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+        }
+        body.dark button {
+            background-color: #333;
+            border-color: #555;
+            color: #fff;
+        }
+        #errorOutput, #correctionOutput {
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+        #errorOutput ul {
+            color: red;
+            padding-left: 20px;
+        }
+        #errorOutput ul.success {
+            color: #008000;
+        }
+        #correctionOutput ul {
+            color: #008080;
+            padding-left: 20px;
+        }
+        body.dark #correctionOutput ul {
+            color: #00d8d8;
+        }
+        #autoFixButton {
+            margin-bottom: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fff;
+        }
+        body.dark #autoFixButton {
+            background-color: #333;
+            border-color: #555;
+            color: #fff;
+        }
+        #dropZone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.2);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #dropZone.active {
+            display: flex;
+        }
+        #dropZone p {
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            padding: 20px;
+            border: 2px dashed white;
+            background: rgba(0, 0, 0, 0.7);
+        }
+        #templateDialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            z-index: 2000;
+            display: none;
+            max-width: 90%;
+            text-align: center;
+        }
+        body.dark #templateDialog {
+            background: #333;
+            border-color: #555;
+            color: #fff;
+        }
+        #templateDialog select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        body.dark #templateDialog select {
+            background: #444;
+            color: #fff;
+            border-color: #555;
+        }
+        #templateDialog button {
+            width: 100px;
+        }
+        .instructions {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+        }
+        body.dark .instructions {
+            color: #ccc;
+        }
+        .instructions h3 {
+            margin-bottom: 5px;
+        }
+        .error-line {
+            background-color: rgba(255, 0, 0, 0.2);
+        }
+        @media (max-width: 600px) {
+            body {
+                margin: 0 10px;
+            }
+            .header-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .header-row h1 {
+                font-size: 20px;
+            }
+            .theme-toggle {
+                margin-left: 0;
+                margin-top: 10px;
+            }
+            button, #autoFixButton {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            .button-row-top, .button-row-bottom {
+                gap: 5px;
+            }
+            .left-buttons, .right-buttons {
+                gap: 5px;
+            }
+            #themeSelect {
+                font-size: 14px;
+                padding: 6px;
+            }
+            #dropZone p {
+                font-size: 18px;
+                padding: 15px;
+            }
+            #templateDialog {
+                width: 80%;
+                padding: 15px;
+            }
+            #templateDialog select {
+                font-size: 14px;
+            }
+            .instructions {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body class="system">
+    <div id="dropZone"><p>Перетащите JSON-файл сюда</p></div>
+    <div id="templateDialog">
+        <p>Файл содержит несколько шаблонов. Выберите один:</p>
+        <select id="templateSelect"></select>
+        <button onclick="confirmTemplateSelection()">Выбрать</button>
+    </div>
+    <div class="container">
+        <div class="header-row">
+            <h1>Sprut.hub. Шаблоны. Редактор и валидатор</h1>
+            <div class="theme-toggle">
+                <select id="themeSelect" onchange="changeTheme()">
+                    <option value="system">Системная</option>
+                    <option value="light">Светлая</option>
+                    <option value="dark">Тёмная</option>
+                </select>
+            </div>
+        </div>
+        <div class="button-row-top">
+            <div class="left-buttons">
+                <input type="file" id="uploadFile" accept=".json" style="display: none;">
+                <button onclick="document.getElementById('uploadFile').click()">Открыть</button>
+            </div>
+            <div class="right-buttons">
+                <button onclick="downloadTemplate()">Скачать</button>
+            </div>
+        </div>
+        <div class="editor-container">
+            <textarea id="jsonEditor"></textarea>
+        </div>
+        <div class="button-row-bottom">
+            <div class="left-buttons">
+                <button onclick="correctJson()">Исправить под требования Sprut.hub</button>
+                <button onclick="validateJson()">Валидировать</button>
+                <button onclick="formatJson()">Форматировать</button>
+            </div>
+            <div class="right-buttons"></div>
+        </div>
+        <div id="autoFixContainer"></div>
+        <div id="errorOutput"></div>
+        <div id="correctionOutput"></div>
+        <div class="instructions">
+            <h3>Инструкция по использованию</h3>
+            <ol>
+                <li>Откройте файл шаблона</li>
+                <li>Если в одном файле содержится несколько шаблонов, то в появившемся окне выберите необходимый (в Sprut.hub с версии 1.12 в одном файле может быть только один шаблон). Для других шаблонов в этом файле операцию повторить</li>
+                <li>Нажмите кнопку "Исправить под требования Sprut.hub" для автоматического исправления шаблона под требования Sprut.hub</li>
+                <li>Нажмите кнопку "Валидировать" для проверки шаблона согласно JSON Schema</li>
+                <li>Исправьте вручную код шаблона, чтобы он проходил валидацию</li>
+                <li>Нажмите кнопку "Форматировать" для форматирования кода</li>
+                <li>Скачайте шаблон</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация CodeMirror
+        const editor = CodeMirror.fromTextArea(document.getElementById('jsonEditor'), {
+            mode: 'application/json',
+            lineNumbers: true,
+            indentUnit: 2,
+            foldGutter: true,
+            gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+            viewportMargin: Infinity
+        });
+
+        // Загрузка JSON Schema
+        let schema = {};
+        fetch('./schema.json')
+            .then(response => response.json())
+            .then(data => schema = data)
+            .catch(error => {
+                console.error('Ошибка загрузки schema.json:', error);
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки schema.json: ${error.message}</li></ul>`;
+            });
+
+        // Загрузка sh_types.json
+        let shTypes = [];
+        fetch('./sh_types.json')
+            .then(response => response.json())
+            .then(data => shTypes = data.result?.service?.types?.types || [])
+            .catch(error => {
+                console.error('Ошибка загрузки sh_types.json:', error);
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки sh_types.json: ${error.message}</li></ul>`;
+            });
+
+        // Управление темами
+        function changeTheme() {
+            const themeSelect = document.getElementById('themeSelect');
+            const theme = themeSelect.value;
+            let effectiveTheme = theme;
+
+            if (theme === 'system') {
+                effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+
+            document.body.className = effectiveTheme;
+            localStorage.setItem('theme', theme);
+            editor.setOption('theme', effectiveTheme === 'dark' ? 'dracula' : 'default');
+        }
+
+        // Инициализация темы
+        const savedTheme = localStorage.getItem('theme') || 'system';
+        document.getElementById('themeSelect').value = savedTheme;
+        changeTheme();
+
+        // Обновление темы при изменении системной темы
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (document.getElementById('themeSelect').value === 'system') {
+                changeTheme();
+            }
+        });
+
+        // Функция выбора шаблона
+        let selectedTemplateCallback = null;
+        function selectTemplateWithDropdown(json, callback) {
+            if (!Array.isArray(json) || json.length <= 1) {
+                callback(json);
+                return;
+            }
+
+            const select = document.getElementById('templateSelect');
+            select.innerHTML = '';
+            json.forEach((template, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.text = `Name: ${template.name || 'без имени'}, Manufacturer: ${template.manufacturer || 'без производителя'}, Model: ${template.model || 'без модели'}`;
+                select.appendChild(option);
+            });
+
+            selectedTemplateCallback = callback;
+            document.getElementById('templateDialog').style.display = 'block';
+        }
+
+        function confirmTemplateSelection() {
+            const select = document.getElementById('templateSelect');
+            const selectedIndex = parseInt(select.value);
+            document.getElementById('templateDialog').style.display = 'none';
+            if (selectedTemplateCallback) {
+                selectedTemplateCallback(selectedIndex);
+            }
+        }
+
+        // Загрузка файла
+        document.getElementById('uploadFile').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        selectTemplateWithDropdown(json, (selectedIndex) => {
+                            const selectedTemplate = Array.isArray(json) ? json[selectedIndex] : json;
+                            editor.setValue(JSON.stringify(selectedTemplate, null, 2));
+                            document.getElementById('errorOutput').textContent = '';
+                            document.getElementById('correctionOutput').textContent = '';
+                            document.getElementById('autoFixContainer').innerHTML = '';
+                            editor.refresh();
+                        });
+                    } catch (e) {
+                        document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка синтаксиса JSON: ${e.message}</li></ul>`;
+                    }
+                    event.target.value = ''; // Сброс input для повторной загрузки
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // Drag & Drop
+        const dropZone = document.getElementById('dropZone');
+        let dragCounter = 0;
+
+        document.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            dragCounter++;
+            dropZone.classList.add('active');
+        });
+
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        document.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropZone.classList.remove('active');
+            }
+        });
+
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            dropZone.classList.remove('active');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type === 'application/json') {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        selectTemplateWithDropdown(json, (selectedIndex) => {
+                            const selectedTemplate = Array.isArray(json) ? json[selectedIndex] : json;
+                            editor.setValue(JSON.stringify(selectedTemplate, null, 2));
+                            document.getElementById('errorOutput').textContent = '';
+                            document.getElementById('correctionOutput').textContent = '';
+                            document.getElementById('autoFixContainer').innerHTML = '';
+                            editor.refresh();
+                        });
+                    } catch (e) {
+                        document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка синтаксиса JSON: ${e.message}</li></ul>`;
+                    }
+                };
+                reader.readAsText(file);
+            } else {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка: Перетащите файл в формате JSON</li></ul>`;
+            }
+        });
+
+        // Форматирование JSON
+        function formatJson() {
+            try {
+                const json = JSON.parse(editor.getValue());
+                editor.setValue(JSON.stringify(json, null, 2));
+                document.getElementById('errorOutput').textContent = '';
+                document.getElementById('correctionOutput').innerHTML = `<ul><li>Форматирование успешно выполнено</li></ul>`;
+                document.getElementById('autoFixContainer').innerHTML = '';
+                editor.refresh();
+            } catch (e) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка форматирования: ${e.message}</li></ul>`;
+            }
+        }
+
+        // Подсветка строки с ошибкой
+        function highlightErrorLine(path, jsonStr) {
+            let lineNumber = 0;
+            const pathSegments = path.split('.').filter(p => p);
+            let current = JSON.parse(jsonStr);
+            let currentPath = '';
+            let charCount = 0;
+
+            for (let segment of pathSegments) {
+                if (segment.includes('[')) {
+                    const [key, index] = segment.split(/\[(\d+)\]/).filter(Boolean);
+                    currentPath += `["${key}"][${index}]`;
+                    current = current[key][parseInt(index)];
+                } else {
+                    currentPath += `["${segment}"]`;
+                    current = current[segment];
+                }
+            }
+
+            const jsonLines = jsonStr.split('\n');
+            for (let i = 0; i < jsonLines.length; i++) {
+                charCount += jsonLines[i].length + 1;
+                if (jsonLines[i].includes(`"${pathSegments[pathSegments.length - 1]}"`) || (path === '' && i === 0)) {
+                    lineNumber = i;
+                    break;
+                }
+            }
+
+            if (lineNumber >= 0) {
+                editor.addLineClass(lineNumber, 'background', 'error-line');
+            }
+
+            return lineNumber + 1;
+        }
+
+        // Очистка подсветки ошибок
+        function clearErrorHighlights() {
+            for (let i = 0; i < editor.lineCount(); i++) {
+                editor.removeLineClass(i, 'background', 'error-line');
+            }
+        }
+
+        // Валидация сервисов и характеристик
+        function validateServiceAndCharacteristics(json, errors, warnings, jsonStr) {
+            if (json.services && Array.isArray(json.services)) {
+                json.services.forEach((service, serviceIndex) => {
+                    if (!service.type) {
+                        const line = highlightErrorLine(`services[${serviceIndex}]`, jsonStr);
+                        errors.push(`Сервис ${serviceIndex + 1}: Отсутствует поле type (строка ${line})`);
+                        return;
+                    }
+
+                    const serviceDef = shTypes.find(t => t.type === service.type);
+                    if (!serviceDef) {
+                        const line = highlightErrorLine(`services[${serviceIndex}].type`, jsonStr);
+                        errors.push(`Сервис ${service.type}: Тип сервиса не найден (строка ${line})`);
+                        return;
+                    }
+
+                    if (!service.characteristics || !Array.isArray(service.characteristics)) {
+                        const line = highlightErrorLine(`services[${serviceIndex}].characteristics`, jsonStr);
+                        errors.push(`Сервис ${service.type}: Отсутствует или некорректно поле characteristics (строка ${line})`);
+                        return;
+                    }
+
+                    service.characteristics.forEach((char, charIndex) => {
+                        if (!char.type) {
+                            const line = highlightErrorLine(`services[${serviceIndex}].characteristics[${charIndex}]`, jsonStr);
+                            errors.push(`Сервис ${service.type}, характеристика ${charIndex + 1}: Отсутствует поле type (строка ${line})`);
+                            return;
+                        }
+
+                        const supportedCharacteristics = [
+                            ...(serviceDef.required || []),
+                            ...(serviceDef.optional || [])
+                        ];
+                        const charDef = supportedCharacteristics.find(c => c.type === char.type);
+                        if (!charDef) {
+                            const line = highlightErrorLine(`services[${serviceIndex}].characteristics[${charIndex}].type`, jsonStr);
+                            warnings.push(`Сервис ${service.type}: Характеристика ${char.type} не поддерживается (строка ${line})`);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Локализация ошибок JSON Schema
+        function translateAjvError(error, json, jsonStr) {
+            const path = error.dataPath || '';
+            const message = error.message;
+            let translated = '';
+            const line = highlightErrorLine(path.replace(/^\./, ''), jsonStr);
+
+            switch (error.keyword) {
+                case 'additionalProperties':
+                    const extraProp = error.params.additionalProperty;
+                    translated = `Поле "${extraProp}" в ${path || 'корне объекта'} не разрешено по схеме (строка ${line})`;
+                    break;
+                case 'required':
+                    translated = `В ${path || 'объекте'} отсутствует обязательное поле "${error.params.missingProperty}" (строка ${line})`;
+                    break;
+                case 'type':
+                    translated = `Поле ${path} имеет неверный тип: ожидается ${error.params.type}, найдено ${typeof json[path.split('.').reduce((o, k) => o && o[k], json)]} (строка ${line})`;
+                    break;
+                case 'enum':
+                    translated = `Поле ${path} имеет недопустимое значение. Допустимые значения: ${error.params.allowedValues.join(', ')} (строка ${line})`;
+                    break;
+                case 'anyOf':
+                    translated = `Поле ${path} должно соответствовать одной из схем, определённых в JSON Schema (строка ${line})`;
+                    break;
+                case 'dependencies':
+                    translated = `Поле ${path} должно содержать свойство ${error.params.missingProperty}, если присутствует ${error.params.property} (строка ${line})`;
+                    break;
+                default:
+                    translated = `Ошибка в ${path}: ${message} (строка ${line})`;
+            }
+
+            return { error: error, message: translated, line };
+        }
+
+        // Автоматическое исправление ошибок JSON Schema
+        function autoFixJson() {
+            try {
+                let json = JSON.parse(editor.getValue());
+                const corrections = [];
+                const ajv = new Ajv({ allErrors: true });
+                const validate = ajv.compile(schema);
+                validate(json);
+
+                if (validate.errors) {
+                    validate.errors.forEach(error => {
+                        const path = error.dataPath.split('.').filter(p => p).reduce((obj, key) => {
+                            if (key.includes('[')) {
+                                const [arrayKey, index] = key.split(/\[(\d+)\]/).filter(Boolean);
+                                return obj[arrayKey][parseInt(index)];
+                            }
+                            return obj[key];
+                        }, json);
+
+                        if (error.keyword === 'additionalProperties') {
+                            const extraProp = error.params.additionalProperty;
+                            const parentPath = error.dataPath.split('.').filter(p => p);
+                            let parent = json;
+                            for (let i = 0; i < parentPath.length; i++) {
+                                let key = parentPath[i];
+                                if (key.includes('[')) {
+                                    const [arrayKey, index] = key.split(/\[(\d+)\]/).filter(Boolean);
+                                    parent = parent[arrayKey][parseInt(index)];
+                                } else {
+                                    parent = parent[key];
+                                }
+                            }
+                            delete parent[extraProp];
+                            corrections.push(`Удалено недопустимое поле "${extraProp}" в ${error.dataPath || 'корне объекта'}`);
+                        } else if (error.keyword === 'dependencies' && error.params.missingProperty === 'type') {
+                            const linkPath = error.dataPath.split('.').filter(p => p);
+                            let link = json;
+                            for (let i = 0; i < linkPath.length; i++) {
+                                let key = linkPath[i];
+                                if (key.includes('[')) {
+                                    const [arrayKey, index] = key.split(/\[(\d+)\]/).filter(Boolean);
+                                    link = link[arrayKey][parseInt(index)];
+                                } else {
+                                    link = link[key];
+                                }
+                            }
+                            link.type = 'unknown';
+                            corrections.push(`Добавлено поле type="unknown" в ${error.dataPath}`);
+                        }
+                    });
+                }
+
+                editor.setValue(JSON.stringify(json, null, 2));
+                document.getElementById('errorOutput').textContent = '';
+                document.getElementById('correctionOutput').innerHTML = corrections.length > 0
+                    ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
+                    : '<ul><li>Автоматические исправления не применялись</li></ul>';
+                document.getElementById('autoFixContainer').innerHTML = '';
+                clearErrorHighlights();
+                editor.refresh();
+            } catch (e) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка автоматического исправления: ${e.message}</li></ul>`;
+            }
+        }
+
+        // Валидация JSON
+        function validateJson() {
+            try {
+                const jsonStr = editor.getValue();
+                const json = JSON.parse(jsonStr);
+                if (Array.isArray(json)) {
+                    const line = highlightErrorLine('', jsonStr);
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка: Введите один шаблон (объект JSON), а не массив (строка ${line})</li></ul>`;
+                    document.getElementById('autoFixContainer').innerHTML = '';
+                    return;
+                }
+
+                clearErrorHighlights();
+                const errors = [];
+                const warnings = [];
+                const errorLines = new Set();
+
+                const hasTopicGetOrSet = json.services && Array.isArray(json.services) && json.services.some(service => 
+                    service.characteristics && Array.isArray(service.characteristics) && service.characteristics.some(char => 
+                        char.link && (Array.isArray(char.link) ? char.link : [char.link]).some(link => link.topicGet || link.topicSet)
+                    )
+                );
+
+                if (hasTopicGetOrSet) {
+                    if (!json.modelId || !/\(.*\)/.test(json.modelId)) {
+                        const line = highlightErrorLine('modelId', jsonStr);
+                        errors.push(`В MQTT шаблонах должно быть регулярное выражение в modelId (строка ${line})`);
+                        errorLines.add(line);
+                    }
+
+                    json.services.forEach((service, serviceIndex) => {
+                        if (service.characteristics && Array.isArray(service.characteristics)) {
+                            service.characteristics.forEach((char, charIndex) => {
+                                if (char.link) {
+                                    const links = Array.isArray(char.link) ? char.link : [char.link];
+                                    links.forEach((link, linkIndex) => {
+                                        if (link.topicGet && !link.topicGet.includes('(1)')) {
+                                            const line = highlightErrorLine(`services[${serviceIndex}].characteristics[${charIndex}].link[${linkIndex}].topicGet`, jsonStr);
+                                            errors.push(`Поле topicGet в характеристике ${char.type || 'без типа'} не содержит подстроку "(1)" (строка ${line})`);
+                                            errorLines.add(line);
+                                        }
+                                        if (link.topicSet && !link.topicSet.includes('(1)')) {
+                                            const line = highlightErrorLine(`services[${serviceIndex}].characteristics[${charIndex}].link[${linkIndex}].topicSet`, jsonStr);
+                                            errors.push(`Поле topicSet в характеристике ${char.type || 'без типа'} не содержит подстроку "(1)" (строка ${line})`);
+                                            errorLines.add(line);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+
+                validateServiceAndCharacteristics(json, errors, warnings, jsonStr);
+
+                const ajv = new Ajv({ allErrors: true });
+                const validate = ajv.compile(schema);
+                const valid = validate(json);
+
+                let errorOutput = '';
+                if (!valid) {
+                    const schemaErrors = validate.errors
+                        ? validate.errors
+                            .map(err => translateAjvError(err, json, jsonStr))
+                            .map(({ message }) => `<li>${message}</li>`)
+                            .join('')
+                        : '';
+                    errorOutput += schemaErrors;
+                }
+                if (errors.length > 0) {
+                    errorOutput += errors.map(err => `<li>${err}</li>`).join('');
+                }
+                if (warnings.length > 0) {
+                    errorOutput += warnings.map(warn => `<li>Предупреждение: ${warn}</li>`).join('');
+                }
+
+                if (errorOutput) {
+                    document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
+                    document.getElementById('errorOutput').innerHTML = `<ul>${errorOutput}</ul>`;
+                } else {
+                    document.getElementById('autoFixContainer').innerHTML = '';
+                    document.getElementById('errorOutput').innerHTML = `<ul class="success"><li>JSON валиден по схеме</li></ul>`;
+                }
+                document.getElementById('correctionOutput').textContent = '';
+                editor.refresh();
+            } catch (e) {
+                const line = e.lineNumber || 1;
+                clearErrorHighlights();
+                editor.addLineClass(line - 1, 'background', 'error-line');
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка синтаксиса JSON: ${e.message} (строка ${line})</li></ul>`;
+                document.getElementById('autoFixContainer').innerHTML = '';
+            }
+        }
+
+        // Исправление JSON под требования Sprut.hub
+        function correctJson() {
+            try {
+                let json = JSON.parse(editor.getValue());
+                selectTemplateWithDropdown(json, (selectedIndex) => {
+                    const selectedTemplate = Array.isArray(json) ? json[selectedIndex] : json;
+                    json = JSON.parse(JSON.stringify(selectedTemplate)); // Глубокая копия
+
+                    const corrections = [];
+
+                    // Преобразование topicSearch в modelId
+                    if ('topicSearch' in json) {
+                        const firstTopicSearch = Array.isArray(json.topicSearch) ? json.topicSearch[0] : json.topicSearch;
+                        if (firstTopicSearch && !json.modelId) {
+                            json.modelId = firstTopicSearch;
+                            corrections.push(`Первое значение topicSearch перенесено в modelId: ${firstTopicSearch}`);
+                        }
+                        delete json.topicSearch;
+                        corrections.push(`Поле topicSearch удалено`);
+                    }
+
+                    // Исправление template
+                    if (typeof json.template === 'string') {
+                        json.template = [json.template];
+                        corrections.push(`Поле template преобразовано в массив`);
+                    }
+
+                    // Исправление manufacturerId и modelId
+                    if (typeof json.manufacturerId === 'string' && json.manufacturerId.startsWith('(') && json.manufacturerId.endsWith(')')) {
+                        json.manufacturerId = json.manufacturerId.slice(1, -1);
+                        corrections.push(`Удалены скобки из manufacturerId`);
+                    }
+                    if (typeof json.modelId === 'string' && json.modelId.startsWith('(') && json.modelId.endsWith(')')) {
+                        json.modelId = json.modelId.slice(1, -1);
+                        corrections.push(`Удалены скобки из modelId`);
+                    }
+
+                    // Исправление link в characteristics
+                    if (json.services && Array.isArray(json.services)) {
+                        json.services.forEach(service => {
+                            if (service.characteristics && Array.isArray(service.characteristics)) {
+                                service.characteristics.forEach(characteristic => {
+                                    if (characteristic.type === 'Float') {
+                                        characteristic.type = 'Double';
+                                        corrections.push(`Характеристика ${characteristic.type || 'без типа'}: Тип Float заменён на Double`);
+                                    }
+                                    if (characteristic.link && !Array.isArray(characteristic.link)) {
+                                        characteristic.link = [characteristic.link];
+                                        corrections.push(`Поле link в характеристике ${characteristic.type || 'без типа'} преобразовано в массив`);
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    // Исправление link и типа в options
+                    if (json.options && Array.isArray(json.options)) {
+                        json.options.forEach(option => {
+                            if (option.type === 'Float') {
+                                option.type = 'Double';
+                                corrections.push(`Опция ${option.name || 'без имени'}: Тип Float заменён на Double`);
+                            }
+                            if (option.link && !Array.isArray(option.link)) {
+                                option.link = [option.link];
+                                corrections.push(`Поле link в опции "${option.name || 'без имени'}" преобразовано в массив`);
+                            }
+                        });
+                    }
+
+                    editor.setValue(JSON.stringify(json, null, 2));
+                    document.getElementById('errorOutput').textContent = '';
+                    document.getElementById('correctionOutput').innerHTML = corrections.length > 0
+                        ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
+                        : '<ul><li>Исправления не требовались</li></ul>';
+                    document.getElementById('autoFixContainer').innerHTML = '';
+                    clearErrorHighlights();
+                    editor.refresh();
+                });
+            } catch (e) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка исправления: ${e.message}</li></ul>`;
+            }
+        }
+
+        // Скачивание JSON
+        function downloadTemplate() {
+            try {
+                const json = JSON.parse(editor.getValue());
+                if (Array.isArray(json)) {
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка: Введите один шаблон (объект JSON), а не массив</li></ul>`;
+                    return;
+                }
+                const manufacturer = (json.manufacturer || 'unknown').replace(/\s+/g, '_');
+                const model = (json.model || 'unknown').replace(/\s+/g, '_');
+                const filename = `${manufacturer}_${model}.json`;
+                const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+                document.getElementById('errorOutput').textContent = '';
+                document.getElementById('correctionOutput').textContent = '';
+                document.getElementById('autoFixContainer').innerHTML = '';
+            } catch (e) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка скачивания: ${e.message}</li></ul>`;
+            }
+        }
+    </script>
+</body>
+</html>

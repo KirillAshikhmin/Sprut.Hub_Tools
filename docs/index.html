@@ -323,21 +323,31 @@
                 <button onclick="validateJson()">Валидировать</button>
                 <button onclick="formatJson()">Форматировать</button>
             </div>
-            <div class="right-buttons"></div>
+            <div class="right-buttons">
+                <button onclick="oneClickFix()">Фикс в 1 клик</button>
+            </div>
         </div>
         <div id="autoFixContainer"></div>
-        <div id="errorOutput"></div>
         <div id="correctionOutput"></div>
+        <div id="errorOutput"></div>
         <div class="instructions">
             <h3>Инструкция по использованию</h3>
+            <h4>Вариант 1 (быстрый):</h4>
+            <ol>
+                <li>Откройте файл шаблона</li>
+                <li>Нажмите "Фикс в 1 клик"</li>
+                <li>Обновить шаблон в Sprut.hub</li>
+            </ol>
+            <h4>Вариант 2 (ручной):</h4>
             <ol>
                 <li>Откройте файл шаблона</li>
                 <li>Если в одном файле содержится несколько шаблонов, то в появившемся окне выберите необходимый (в Sprut.hub с версии 1.12 в одном файле может быть только один шаблон). Для других шаблонов в этом файле операцию повторить</li>
                 <li>Нажмите кнопку "Исправить под требования Sprut.hub" для автоматического исправления шаблона под требования Sprut.hub</li>
                 <li>Нажмите кнопку "Валидировать" для проверки шаблона согласно JSON Schema</li>
                 <li>Если в шаблоне есть ошибки валидации - нажмите "Попробовать исправить автоматически" и/или исправьте вручную код шаблона, чтобы он проходил валидацию, повторно нажав на кнопку "Валидировать"</li>
+                <li>Нажмите кнопку "Форматировать" для форматирования кода</li>
                 <li>Скачайте шаблон</li>
-                <li>Обновить шаблон в Sprut.hub.</li>
+                <li>Обновить шаблон в Sprut.hub</li>
             </ol>
         </div>
         <div class="instructions" style="text-align: center; margin-top: 20px;">
@@ -794,6 +804,13 @@
                 document.getElementById('autoFixContainer').innerHTML = '';
                 clearErrorHighlights();
                 editor.refresh();
+                
+                // Автоматическая повторная валидация после исправлений
+                if (corrections.length > 0) {
+                    setTimeout(() => {
+                        validateJsonInternal(true);
+                    }, 100);
+                }
             } catch (e) {
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка автоматического исправления: ${e.message}</li></ul>`;
             }
@@ -801,6 +818,11 @@
 
         // Валидация JSON
         function validateJson() {
+            validateJsonInternal(false);
+        }
+
+        // Внутренняя функция валидации с параметром для автоматической валидации
+        function validateJsonInternal(isAutoValidation = false) {
             try {
                 const jsonStr = editor.getValue();
                 const json = JSON.parse(jsonStr);
@@ -890,7 +912,9 @@
                 if (errorOutput) {
                     document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
                     document.getElementById('errorOutput').innerHTML = `<ul>${errorOutput}</ul>`;
-                    document.getElementById('correctionOutput').textContent = '';
+                    if (!isAutoValidation) {
+                        document.getElementById('correctionOutput').textContent = '';
+                    }
                 } else {
                     document.getElementById('autoFixContainer').innerHTML = '';
                     document.getElementById('errorOutput').innerHTML = '';
@@ -906,194 +930,186 @@
             }
         }
 
+        // Логика всех исправлений, вынесенная для переиспользования
+        function applyCorrections(jsonToCorrect) {
+            const newJson = JSON.parse(JSON.stringify(jsonToCorrect)); // Глубокая копия
+            const corrections = [];
+
+            // Преобразование topicSearch в modelId
+            let topicSearchValue = null;
+            function findAndRemoveTopicSearch(obj) {
+                let removed = false;
+                for (const key in obj) {
+                    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                        if (key === 'topicSearch') {
+                            const value = Array.isArray(obj[key]) ? obj[key][0] : obj[key];
+                            if (!topicSearchValue && value) { // Сохраняем только первое найденное непустое значение
+                                topicSearchValue = value;
+                            }
+                            delete obj[key];
+                            removed = true;
+                        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                            if (findAndRemoveTopicSearch(obj[key])) {
+                                removed = true;
+                            }
+                        }
+                    }
+                }
+                return removed;
+            }
+
+            if (findAndRemoveTopicSearch(newJson)) {
+                if (topicSearchValue) {
+                    newJson.modelId = topicSearchValue;
+                    corrections.push(`Значение topicSearch перенесено в modelId и все его вхождения удалены.`);
+                } else {
+                    corrections.push(`Пустое поле topicSearch удалено из шаблона.`);
+                }
+            }
+
+            // Key renames
+            let renameCorrectionAdded = false;
+            const renameMap = {
+                mapOut: 'outMap',
+                mapIn: 'map',
+                inMap: 'map',
+                funcOut: 'outFunc',
+                func: 'inFunc',
+                funcIn: 'inFunc'
+            };
+
+            function renameRecursively(obj) {
+                if (!obj || typeof obj !== 'object') {
+                    return;
+                }
+                if (Array.isArray(obj)) {
+                    obj.forEach(renameRecursively);
+                    return;
+                }
+
+                let renamedInThisObject = false;
+                for (const oldKey in renameMap) {
+                    if (obj.hasOwnProperty(oldKey)) {
+                        const newKey = renameMap[oldKey];
+                        obj[newKey] = obj[oldKey];
+                        delete obj[oldKey];
+                        renamedInThisObject = true;
+                    }
+                }
+
+                if (renamedInThisObject && !renameCorrectionAdded) {
+                    corrections.push('Выполнено переименование полей (mapOut->outMap, inMap/mapIn->map, funcOut->outFunc, func/funcIn->inFunc)');
+                    renameCorrectionAdded = true;
+                }
+
+                for (const key in obj) {
+                    if (obj.hasOwnProperty(key)) {
+                        renameRecursively(obj[key]);
+                    }
+                }
+            }
+            
+            renameRecursively(newJson);
+
+            // Исправление template
+            if (typeof newJson.template === 'string') {
+                newJson.template = [newJson.template];
+                corrections.push(`Поле template преобразовано в массив`);
+            }
+
+            // Исправление manufacturerId и modelId
+            if (typeof newJson.manufacturerId === 'string' && newJson.manufacturerId.startsWith('(') && newJson.manufacturerId.endsWith(')')) {
+                newJson.manufacturerId = newJson.manufacturerId.slice(1, -1);
+                corrections.push(`Удалены скобки из manufacturerId`);
+            }
+            if (typeof newJson.modelId === 'string' && newJson.modelId.startsWith('(') && newJson.modelId.endsWith(')')) {
+                newJson.modelId = newJson.modelId.slice(1, -1);
+                corrections.push(`Удалены скобки из modelId`);
+            }
+
+            // Исправление link в characteristics
+            if (newJson.services && Array.isArray(newJson.services)) {
+                newJson.services.forEach((service, serviceIndex) => {
+                    if (service.characteristics && Array.isArray(service.characteristics)) {
+                        service.characteristics.forEach(characteristic => {
+                            if (characteristic.type === 'Float') {
+                                characteristic.type = 'Double';
+                                const serviceName = service.name ? ` сервиса "${service.name}"` : '';
+                                corrections.push(`Характеристика ${characteristic.type || ''}${serviceName}: Тип Float заменён на Double`);
+                            }
+                            if (characteristic.link && !Array.isArray(characteristic.link)) {
+                                characteristic.link = [characteristic.link];
+                                const serviceName = service.name ? ` сервиса "${service.name}"` : '';
+                                corrections.push(`Поле link в характеристике ${characteristic.type || ''}${serviceName} преобразовано в массив`);
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Исправление link и типа в options
+            if (newJson.options && Array.isArray(newJson.options)) {
+                newJson.options.forEach(option => {
+                    if (option.type === 'Float') {
+                        option.type = 'Double';
+                        corrections.push(`Опция ${option.name || ''}: Тип Float заменён на Double`);
+                    }
+                    if (option.link && !Array.isArray(option.link)) {
+                        option.link = [option.link];
+                        corrections.push(`Поле link в опции "${option.name || ''}" преобразовано в массив`);
+                    }
+                });
+            }
+
+            // Исправление link в init
+            let initLinkCorrectionAdded = false;
+            if (newJson.init && Array.isArray(newJson.init)) {
+                newJson.init.forEach((initCmd) => {
+                    if (initCmd.link && !Array.isArray(initCmd.link)) {
+                        initCmd.link = [initCmd.link];
+                        if (!initLinkCorrectionAdded) {
+                            corrections.push(`Поле link в командах инициализации (init) преобразовано в массив`);
+                            initLinkCorrectionAdded = true;
+                        }
+                    }
+                });
+            }
+
+            // Reorder keys for better readability before displaying
+            const keyOrder = [
+                'name', 'description', 'optional', 'comment', 'overview', 'room', 
+                'manufacturer', 'model', 'manufacturerId', 'modelId', 'status', 
+                'catalogId', 'issue', 'url', 'ali', 'ali2', 'minRevision', 
+                'maxRevision', 'powerMode', 'otaSupport', 'otaReInitAfterUpdate', 
+                'imageType', 'date', 'TODO', 'visible', 'template', 'init', 
+                'services', 'options'
+            ];
+
+            const orderedJson = {};
+            const remainingKeys = { ...newJson };
+
+            for (const key of keyOrder) {
+                if (Object.prototype.hasOwnProperty.call(newJson, key)) {
+                    orderedJson[key] = newJson[key];
+                    delete remainingKeys[key];
+                }
+            }
+
+            Object.assign(orderedJson, remainingKeys);
+
+            return { finalJson: orderedJson, corrections };
+        }
+
         // Исправление JSON под требования Sprut.hub
         function correctJson() {
             try {
                 let json = JSON.parse(editor.getValue());
                 selectTemplateWithDropdown(json, (selectedIndex) => {
-                    let selectedTemplate;
-                    if (selectedIndex !== undefined && Array.isArray(json)) {
-                        selectedTemplate = json[selectedIndex];
-                    } else if (!Array.isArray(json)) {
-                        selectedTemplate = json;
-                    } else if (selectedIndex === undefined && Array.isArray(json) && json.length === 1) {
-                        selectedTemplate = json[0];
-                    } else {
-                        selectedTemplate = selectedIndex; // Fallback for when the whole object is passed
-                    }
-
-                    if (!selectedTemplate) {
-                        // This case can happen if an array is passed but no selection is made,
-                        // for now, we do nothing. A better implementation might ask the user to select one.
-                        return; 
-                    }
-
-                    const newJson = JSON.parse(JSON.stringify(selectedTemplate)); // Глубокая копия
-                    const corrections = [];
-
-                    // Преобразование topicSearch в modelId
-                    let topicSearchValue = null;
-                    function findAndRemoveTopicSearch(obj) {
-                        let removed = false;
-                        for (const key in obj) {
-                            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                                if (key === 'topicSearch') {
-                                    const value = Array.isArray(obj[key]) ? obj[key][0] : obj[key];
-                                    if (!topicSearchValue && value) { // Сохраняем только первое найденное непустое значение
-                                        topicSearchValue = value;
-                                    }
-                                    delete obj[key];
-                                    removed = true;
-                                } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                                    if (findAndRemoveTopicSearch(obj[key])) {
-                                        removed = true;
-                                    }
-                                }
-                            }
-                        }
-                        return removed;
-                    }
-
-                    if (findAndRemoveTopicSearch(newJson)) {
-                        if (topicSearchValue) {
-                            newJson.modelId = topicSearchValue;
-                            corrections.push(`Значение topicSearch перенесено в modelId и все его вхождения удалены.`);
-                        } else {
-                            corrections.push(`Пустое поле topicSearch удалено из шаблона.`);
-                        }
-                    }
-
-                    // Key renames
-                    let renameCorrectionAdded = false;
-                    const renameMap = {
-                        mapOut: 'outMap',
-                        mapIn: 'map',
-                        inMap: 'map',
-                        funcOut: 'outFunc',
-                        func: 'inFunc',
-                        funcIn: 'inFunc'
-                    };
-
-                    function renameRecursively(obj) {
-                        if (!obj || typeof obj !== 'object') {
-                            return;
-                        }
-                        if (Array.isArray(obj)) {
-                            obj.forEach(renameRecursively);
-                            return;
-                        }
-
-                        let renamedInThisObject = false;
-                        for (const oldKey in renameMap) {
-                            if (obj.hasOwnProperty(oldKey)) {
-                                const newKey = renameMap[oldKey];
-                                obj[newKey] = obj[oldKey];
-                                delete obj[oldKey];
-                                renamedInThisObject = true;
-                            }
-                        }
-
-                        if (renamedInThisObject && !renameCorrectionAdded) {
-                            corrections.push('Выполнено переименование полей (mapOut->outMap, inMap/mapIn->map, funcOut->outFunc, func/funcIn->inFunc)');
-                            renameCorrectionAdded = true;
-                        }
-
-                        for (const key in obj) {
-                            if (obj.hasOwnProperty(key)) {
-                                renameRecursively(obj[key]);
-                            }
-                        }
-                    }
+                    const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
                     
-                    renameRecursively(newJson);
+                    const { finalJson, corrections } = applyCorrections(selectedTemplate);
 
-                    // Исправление template
-                    if (typeof newJson.template === 'string') {
-                        newJson.template = [newJson.template];
-                        corrections.push(`Поле template преобразовано в массив`);
-                    }
-
-                    // Исправление manufacturerId и modelId
-                    if (typeof newJson.manufacturerId === 'string' && newJson.manufacturerId.startsWith('(') && newJson.manufacturerId.endsWith(')')) {
-                        newJson.manufacturerId = newJson.manufacturerId.slice(1, -1);
-                        corrections.push(`Удалены скобки из manufacturerId`);
-                    }
-                    if (typeof newJson.modelId === 'string' && newJson.modelId.startsWith('(') && newJson.modelId.endsWith(')')) {
-                        newJson.modelId = newJson.modelId.slice(1, -1);
-                        corrections.push(`Удалены скобки из modelId`);
-                    }
-
-                    // Исправление link в characteristics
-                    if (newJson.services && Array.isArray(newJson.services)) {
-                        newJson.services.forEach(service => {
-                            if (service.characteristics && Array.isArray(service.characteristics)) {
-                                service.characteristics.forEach(characteristic => {
-                                    if (characteristic.type === 'Float') {
-                                        characteristic.type = 'Double';
-                                        corrections.push(`Характеристика ${characteristic.type || ''}: Тип Float заменён на Double`);
-                                    }
-                                    if (characteristic.link && !Array.isArray(characteristic.link)) {
-                                        characteristic.link = [characteristic.link];
-                                        corrections.push(`Поле link в характеристике ${characteristic.type || ''} преобразовано в массив`);
-                                    }
-                                });
-                            }
-                        });
-                    }
-
-                    // Исправление link и типа в options
-                    if (newJson.options && Array.isArray(newJson.options)) {
-                        newJson.options.forEach(option => {
-                            if (option.type === 'Float') {
-                                option.type = 'Double';
-                                corrections.push(`Опция ${option.name || ''}: Тип Float заменён на Double`);
-                            }
-                            if (option.link && !Array.isArray(option.link)) {
-                                option.link = [option.link];
-                                corrections.push(`Поле link в опции "${option.name || ''}" преобразовано в массив`);
-                            }
-                        });
-                    }
-
-                    // Исправление link в init
-                    let initLinkCorrectionAdded = false;
-                    if (newJson.init && Array.isArray(newJson.init)) {
-                        newJson.init.forEach((initCmd) => {
-                            if (initCmd.link && !Array.isArray(initCmd.link)) {
-                                initCmd.link = [initCmd.link];
-                                if (!initLinkCorrectionAdded) {
-                                    corrections.push(`Поле link в командах инициализации (init) преобразовано в массив`);
-                                    initLinkCorrectionAdded = true;
-                                }
-                            }
-                        });
-                    }
-
-                    // Reorder keys for better readability before displaying
-                    const keyOrder = [
-                        'name', 'description', 'optional', 'comment', 'overview', 'room', 
-                        'manufacturer', 'model', 'manufacturerId', 'modelId', 'status', 
-                        'catalogId', 'issue', 'url', 'ali', 'ali2', 'minRevision', 
-                        'maxRevision', 'powerMode', 'otaSupport', 'otaReInitAfterUpdate', 
-                        'imageType', 'date', 'TODO', 'visible', 'template', 'init', 
-                        'services', 'options'
-                    ];
-
-                    const orderedJson = {};
-                    const remainingKeys = { ...newJson }; // Create a shallow copy to track remaining keys
-
-                    // Add keys in the desired order
-                    for (const key of keyOrder) {
-                        if (Object.prototype.hasOwnProperty.call(newJson, key)) {
-                            orderedJson[key] = newJson[key];
-                            delete remainingKeys[key]; // Remove the key as it's been handled
-                        }
-                    }
-
-                    // Append any remaining keys
-                    Object.assign(orderedJson, remainingKeys);
-
-                    editor.setValue(JSON.stringify(orderedJson, null, 2));
+                    editor.setValue(JSON.stringify(finalJson, null, 2));
                     document.getElementById('errorOutput').textContent = '';
                     document.getElementById('correctionOutput').innerHTML = corrections.length > 0
                         ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
@@ -1104,6 +1120,63 @@
                 });
             } catch (e) {
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка исправления: ${e.message}</li></ul>`;
+            }
+        }
+
+        // Фикс в 1 клик
+        async function oneClickFix() {
+            const btn = document.querySelector('button[onclick="oneClickFix()"]');
+            btn.disabled = true;
+            btn.textContent = 'Выполняется...';
+            document.getElementById('correctionOutput').innerHTML = '<ul><li>Запущен фикс в 1 клик...</li></ul>';
+
+            try {
+                // Step 1: Run corrections
+                const json = JSON.parse(editor.getValue());
+                if (Array.isArray(json)) {
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>"Фикс в 1 клик" не работает с файлами, содержащими несколько шаблонов. Пожалуйста, выберите и загрузите один шаблон в редактор.</li></ul>`;
+                    return;
+                }
+                const { finalJson, corrections } = applyCorrections(json);
+                editor.setValue(JSON.stringify(finalJson, null, 2));
+                document.getElementById('correctionOutput').innerHTML = corrections.length > 0
+                    ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
+                    : '<ul><li>Исправления не требовались.</li></ul>';
+                
+                await new Promise(r => setTimeout(r, 50));
+
+                // Step 2: Validate
+                validateJson();
+                let hasErrors = document.getElementById('errorOutput').innerHTML.trim() !== '';
+
+                if (!hasErrors) {
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Ошибок не найдено, форматирование и скачивание...</li></ul>';
+                    formatJson();
+                    downloadTemplate();
+                    return;
+                }
+
+                // Step 3: Errors found, try auto-fix
+                document.getElementById('correctionOutput').innerHTML += '<ul><li>Найдены ошибки, попытка автоматического исправления...</li></ul>';
+                autoFixJson();
+
+                await new Promise(r => setTimeout(r, 200)); // wait for autoFixJson's internal timeout
+
+                // Step 4: Check validation result again
+                hasErrors = document.getElementById('errorOutput').innerHTML.trim() !== '';
+
+                if (!hasErrors) {
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Авто-исправление успешно! Форматирование и скачивание...</li></ul>';
+                    formatJson();
+                    downloadTemplate();
+                } else {
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Не удалось исправить все ошибки автоматически. Пожалуйста, исправьте их вручную.</li></ul>';
+                }
+            } catch (e) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Произошла ошибка в процессе "Фикс в 1 клик": ${e.message}</li></ul>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Фикс в 1 клик';
             }
         }
 

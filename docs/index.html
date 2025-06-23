@@ -330,6 +330,12 @@
                 <button onclick="formatJson()">Форматировать</button>
             </div>
             <div class="right-buttons">
+                <div style="margin-bottom: 6px;">
+                    <label style="display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" id="oneClickOpenFileCheckbox">
+                        Открывать файл
+                    </label>
+                </div>
                 <button onclick="oneClickFix()">Фикс в 1 клик</button>
             </div>
         </div>
@@ -842,6 +848,11 @@
 
         // Валидация JSON
         function validateJson() {
+            const value = editor.getValue();
+            if (!value.trim()) {
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
+                return;
+            }
             validateJsonInternal(false);
         }
 
@@ -942,7 +953,17 @@
                 } else {
                     document.getElementById('autoFixContainer').innerHTML = '';
                     document.getElementById('errorOutput').innerHTML = '';
-                    document.getElementById('correctionOutput').innerHTML = `<ul><li>JSON валиден по схеме</li></ul>`;
+                    if (isAutoValidation) {
+                        let prev = document.getElementById('correctionOutput').innerHTML.trim();
+                        if (prev) {
+                            prev = '<br>'+prev;
+                        } else {
+                            prev = '';
+                        }
+                        document.getElementById('correctionOutput').innerHTML = '<ul><li>JSON валиден по схеме</li></ul>' + prev;
+                    } else {
+                        document.getElementById('correctionOutput').innerHTML = `<ul><li>JSON валиден по схеме</li></ul>`;
+                    }
                 }
                 editor.refresh();
             } catch (e) {
@@ -1074,6 +1095,20 @@
             // Исправление link и типа в options
             if (newJson.options && Array.isArray(newJson.options)) {
                 newJson.options.forEach(option => {
+                    // 1. Переименование input -> inputType
+                    if (option.hasOwnProperty('input')) {
+                        option.inputType = option.input;
+                        delete option.input;
+                        corrections.push(`В опции ${option.name || ''} поле input переименовано в inputType`);
+                    }
+                    // 2. Замена значения inputType на допустимое из схемы
+                    if (option.hasOwnProperty('inputType') && typeof option.inputType === 'string' && Array.isArray(allowedInputTypesFromSchema)) {
+                        const found = allowedInputTypesFromSchema.find(v => v.toLowerCase() === option.inputType.toLowerCase());
+                        if (found && found !== option.inputType) {
+                            corrections.push(`В опции ${option.name || ''} значение inputType заменено с "${option.inputType}" на "${found}"`);
+                            option.inputType = found;
+                        }
+                    }
                     if (option.type === 'Float') {
                         option.type = 'Double';
                         corrections.push(`Опция ${option.name || ''}: Тип Float заменён на Double`);
@@ -1127,7 +1162,12 @@
         // Исправление JSON под требования Sprut.hub
         function correctJson() {
             try {
-                let json = JSON.parse(editor.getValue());
+                const value = editor.getValue();
+                if (!value.trim()) {
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
+                    return;
+                }
+                let json = JSON.parse(value);
                 selectTemplateWithDropdown(json, (selectedIndex) => {
                     const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
                     
@@ -1149,6 +1189,36 @@
 
         // Фикс в 1 клик
         async function oneClickFix() {
+            const openFileFirst = document.getElementById('oneClickOpenFileCheckbox').checked;
+            if (openFileFirst) {
+                // Открыть диалог выбора файла, затем продолжить после выбора
+                const fileInput = document.getElementById('uploadFile');
+                fileInput.onchange = async function(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = async function(e) {
+                            try {
+                                editor.setValue(e.target.result);
+                                await new Promise(r => setTimeout(r, 50));
+                                await oneClickFixRun();
+                            } catch (err) {
+                                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка чтения файла: ${err.message}</li></ul>`;
+                            }
+                        };
+                        reader.readAsText(file);
+                    }
+                    event.target.value = '';
+                    fileInput.onchange = null;
+                };
+                fileInput.click();
+                return;
+            }
+            await oneClickFixRun();
+        }
+
+        // Вынесенная логика для фикса в 1 клик (без открытия файла)
+        async function oneClickFixRun() {
             const btn = document.querySelector('button[onclick="oneClickFix()"]');
             btn.disabled = true;
             btn.textContent = 'Выполняется...';

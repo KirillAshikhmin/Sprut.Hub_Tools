@@ -808,6 +808,7 @@
             "C_Scan",
             "C_Receive",
             "C_Transmit",
+            "C_Online",
             "C_Integer",
             "C_Double",
             "C_Boolean",

@@ -121,10 +121,16 @@
             flex-wrap: wrap;
             gap: 10px;
         }
-        .left-buttons, .right-buttons {
+        .left-buttons {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
+        }
+        .right-buttons {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
         }
         button {
             padding: 10px 20px;
@@ -370,9 +376,22 @@
 
         // Загрузка JSON Schema
         let schema = {};
+        let allowedInputTypesFromSchema = [];
         fetch('./schema.json')
             .then(response => response.json())
-            .then(data => schema = data)
+            .then(data => {
+                schema = data;
+                // Найти допустимые значения inputType
+                try {
+                    // Новый путь: definitions.characteristic.properties.inputType.enum
+                    if (data.definitions && data.definitions.characteristic && data.definitions.characteristic.properties && data.definitions.characteristic.properties.inputType && Array.isArray(data.definitions.characteristic.properties.inputType.enum)) {
+                        allowedInputTypesFromSchema = data.definitions.characteristic.properties.inputType.enum;
+                    } else if (data.definitions && data.definitions.inputType && Array.isArray(data.definitions.inputType.enum)) {
+                        // Старый путь на всякий случай
+                        allowedInputTypesFromSchema = data.definitions.inputType.enum;
+                    }
+                } catch (e) { allowedInputTypesFromSchema = []; }
+            })
             .catch(error => {
                 console.error('Ошибка загрузки schema.json:', error);
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки schema.json: ${error.message}</li></ul>`;
@@ -523,7 +542,12 @@
         // Форматирование JSON
         function formatJson() {
             try {
-                const json = JSON.parse(editor.getValue());
+                const value = editor.getValue();
+                if (!value.trim()) {
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
+                    return;
+                }
+                const json = JSON.parse(value);
                 editor.setValue(JSON.stringify(json, null, 2));
                 document.getElementById('errorOutput').textContent = '';
                 document.getElementById('correctionOutput').innerHTML = `<ul><li>Форматирование успешно выполнено</li></ul>`;
@@ -1103,7 +1127,12 @@
         // Исправление JSON под требования Sprut.hub
         function correctJson() {
             try {
-                let json = JSON.parse(editor.getValue());
+                const value = editor.getValue();
+                if (!value.trim()) {
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
+                    return;
+                }
+                let json = JSON.parse(value);
                 selectTemplateWithDropdown(json, (selectedIndex) => {
                     const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
                     

@@ -46,12 +46,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldgutter.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/hint/show-hint.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/javascript/javascript.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/foldgutter.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/fold/brace-fold.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/6.12.6/ajv.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/hint/json-hint.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -291,6 +294,26 @@
                 font-size: 12px;
             }
         }
+        /* --- CodeMirror hints dark theme --- */
+        body.dark .CodeMirror-hints {
+            background: #23232b !important;
+            color: #fff !important;
+            border: 1px solid #444 !important;
+        }
+        body.dark .CodeMirror-hint {
+            color: #fff !important;
+            background: transparent !important;
+        }
+        body.dark .CodeMirror-hint-active {
+            background: #444 !important;
+            color: #fff !important;
+        }
+        body.dark .CodeMirror-hints::-webkit-scrollbar {
+            background: #23232b;
+        }
+        body.dark .CodeMirror-hints::-webkit-scrollbar-thumb {
+            background: #444;
+        }
     </style>
 </head>
 <body class="system">
@@ -314,6 +337,7 @@
         <div class="button-row-top">
             <div class="left-buttons">
                 <input type="file" id="uploadFile" accept=".json" style="display: none;">
+                <input type="file" id="autoFixFileInput" accept=".json" style="display: none;">
                 <button onclick="document.getElementById('uploadFile').click()">Открыть</button>
             </div>
             <div class="right-buttons">
@@ -383,25 +407,46 @@
         // Загрузка JSON Schema
         let schema = {};
         let allowedInputTypesFromSchema = [];
+        
         fetch('./schema.json')
             .then(response => response.json())
             .then(data => {
                 schema = data;
-                // Найти допустимые значения inputType
-                try {
-                    // Новый путь: definitions.characteristic.properties.inputType.enum
-                    if (data.definitions && data.definitions.characteristic && data.definitions.characteristic.properties && data.definitions.characteristic.properties.inputType && Array.isArray(data.definitions.characteristic.properties.inputType.enum)) {
-                        allowedInputTypesFromSchema = data.definitions.characteristic.properties.inputType.enum;
-                    } else if (data.definitions && data.definitions.inputType && Array.isArray(data.definitions.inputType.enum)) {
-                        // Старый путь на всякий случай
-                        allowedInputTypesFromSchema = data.definitions.inputType.enum;
-                    }
-                } catch (e) { allowedInputTypesFromSchema = []; }
+                schemaHintsTree = buildSchemaHintsTree(data);
             })
             .catch(error => {
                 console.error('Ошибка загрузки schema.json:', error);
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки schema.json: ${error.message}</li></ul>`;
             });
+            
+        let schemaHintsTree = null;
+        function buildSchemaHintsTree(schema) {
+            // Рекурсивно строим дерево ключей и enum-значений
+            function walk(def, path = []) {
+                let result = {};
+                if (def.properties) {
+                    for (const key in def.properties) {
+                        const prop = def.properties[key];
+                        result[key] = {
+                            type: prop.type,
+                            description: prop.description || '',
+                            enum: prop.enum || null,
+                            properties: prop.properties ? walk(prop, path.concat(key)) : null
+                        };
+                    }
+                }
+                return result;
+            }
+            
+            let tree = {};
+            
+            // Корневые свойства
+            if (schema.properties) {
+                tree = walk(schema);
+            }
+            
+            return tree;
+        }
 
         // Загрузка sh_types.json
         let shTypes = [];
@@ -440,6 +485,9 @@
             }
         });
 
+        // Флаг для автозапуска фикса после выбора шаблона
+        let oneClickFixMode = false;
+
         // Функция выбора шаблона
         let selectedTemplateCallback = null;
         function selectTemplateWithDropdown(json, callback) {
@@ -457,7 +505,13 @@
                 select.appendChild(option);
             });
 
-            selectedTemplateCallback = callback;
+            selectedTemplateCallback = (selectedIndex) => {
+                callback(selectedIndex);
+                if (oneClickFixMode) {
+                    oneClickFixMode = false;
+                    setTimeout(() => oneClickFixRun(), 100);
+                }
+            };
             document.getElementById('templateDialog').style.display = 'block';
         }
 
@@ -472,24 +526,41 @@
 
         // Загрузка файла
         document.getElementById('uploadFile').addEventListener('change', function(event) {
+            // При ручном открытии файла всегда сбрасываем автофикс
+            oneClickFixMode = false;
             const file = event.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = async function(e) {
                     try {
-                        const json = JSON.parse(e.target.result);
-                        selectTemplateWithDropdown(json, (selectedIndex) => {
-                            const selectedTemplate = Array.isArray(json) ? json[selectedIndex] : json;
-                            editor.setValue(JSON.stringify(selectedTemplate, null, 2));
-                            document.getElementById('errorOutput').textContent = '';
-                            document.getElementById('correctionOutput').textContent = '';
-                            document.getElementById('autoFixContainer').innerHTML = '';
+                        const fileContent = e.target.result;
+                        let parsed;
+                        try {
+                            parsed = JSON.parse(fileContent);
+                        } catch (err) {
+                            document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка чтения файла: ${err.message}</li></ul>`;
+                            return;
+                        }
+                        // Очищаем выводы при открытии файла
+                        document.getElementById('errorOutput').textContent = '';
+                        document.getElementById('correctionOutput').textContent = '';
+                        document.getElementById('autoFixContainer').innerHTML = '';
+                        if (Array.isArray(parsed) && parsed.length > 1) {
+                            // Несколько шаблонов - показываем диалог выбора
+                            selectTemplateWithDropdown(parsed, (selectedIndex) => {
+                                const selectedTemplate = parsed[selectedIndex];
+                                editor.setValue(JSON.stringify(selectedTemplate, null, 2));
+                                editor.refresh();
+                            });
+                        } else {
+                            // Один шаблон - просто загружаем в редактор
+                            const template = Array.isArray(parsed) ? parsed[0] : parsed;
+                            editor.setValue(JSON.stringify(template, null, 2));
                             editor.refresh();
-                        });
-                    } catch (e) {
-                        document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка синтаксиса JSON: ${e.message}</li></ul>`;
+                        }
+                    } catch (err) {
+                        document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка чтения файла: ${err.message}</li></ul>`;
                     }
-                    event.target.value = ''; // Сброс input для повторной загрузки
                 };
                 reader.readAsText(file);
             }
@@ -521,6 +592,7 @@
             e.preventDefault();
             dragCounter = 0;
             dropZone.classList.remove('active');
+            oneClickFixMode = false;
             const file = e.dataTransfer.files[0];
             if (file && file.type === 'application/json') {
                 const reader = new FileReader();
@@ -545,7 +617,9 @@
             }
         });
 
-        // Форматирование JSON
+        // Флаг для контроля форматирования и скачивания из oneClickFixRun
+        let formatFromOneClick = false;
+
         function formatJson() {
             try {
                 const value = editor.getValue();
@@ -553,11 +627,17 @@
                     document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
                     return;
                 }
+                // Очищаем выводы при нажатии кнопки (если не из oneClickFixRun)
+                if (!formatFromOneClick) {
+                    document.getElementById('errorOutput').textContent = '';
+                    document.getElementById('correctionOutput').textContent = '';
+                    document.getElementById('autoFixContainer').innerHTML = '';
+                }
                 const json = JSON.parse(value);
                 editor.setValue(JSON.stringify(json, null, 2));
-                document.getElementById('errorOutput').textContent = '';
-                document.getElementById('correctionOutput').innerHTML = `<ul><li>Форматирование успешно выполнено</li></ul>`;
-                document.getElementById('autoFixContainer').innerHTML = '';
+                if (!formatFromOneClick) {
+                    document.getElementById('correctionOutput').innerHTML = `<ul><li>Форматирование успешно выполнено</li></ul>`;
+                }
                 editor.refresh();
             } catch (e) {
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка форматирования: ${e.message}</li></ul>`;
@@ -775,8 +855,15 @@
         }
 
         // Автоматическое исправление ошибок JSON Schema
-        function autoFixJson() {
+        function autoFixJson(isManual = true) {
             try {
+                // Очищаем выводы при нажатии кнопки только если вызов ручной
+                document.getElementById('errorOutput').textContent = '';
+                document.getElementById('autoFixContainer').innerHTML = '';
+                if (isManual) {
+                    document.getElementById('correctionOutput').textContent = '';
+                }
+                
                 let json = JSON.parse(editor.getValue());
                 const corrections = [];
                 const ajv = new Ajv({ allErrors: true });
@@ -827,11 +914,11 @@
                 }
 
                 editor.setValue(JSON.stringify(json, null, 2));
-                document.getElementById('errorOutput').textContent = '';
-                document.getElementById('correctionOutput').innerHTML = corrections.length > 0
-                    ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
-                    : '<ul><li>Автоматические исправления не применялись</li></ul>';
-                document.getElementById('autoFixContainer').innerHTML = '';
+                if (corrections.length > 0) {
+                    document.getElementById('correctionOutput').innerHTML += `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`;
+                } else {
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Автоматические исправления не применялись</li></ul>';
+                }
                 clearErrorHighlights();
                 editor.refresh();
                 
@@ -847,17 +934,21 @@
         }
 
         // Валидация JSON
-        function validateJson() {
+        function validateJson(suppressCorrectionOutput = false) {
             const value = editor.getValue();
             if (!value.trim()) {
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
                 return;
             }
-            validateJsonInternal(false);
+            // Очищаем выводы при нажатии кнопки
+            document.getElementById('errorOutput').textContent = '';
+            if (!suppressCorrectionOutput) document.getElementById('correctionOutput').textContent = '';
+            document.getElementById('autoFixContainer').innerHTML = '';
+            validateJsonInternal(false, suppressCorrectionOutput);
         }
 
         // Внутренняя функция валидации с параметром для автоматической валидации
-        function validateJsonInternal(isAutoValidation = false) {
+        function validateJsonInternal(isAutoValidation = false, suppressCorrectionOutput = false) {
             try {
                 const jsonStr = editor.getValue();
                 const json = JSON.parse(jsonStr);
@@ -947,21 +1038,13 @@
                 if (errorOutput) {
                     document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
                     document.getElementById('errorOutput').innerHTML = `<ul>${errorOutput}</ul>`;
-                    if (!isAutoValidation) {
+                    if (!isAutoValidation && !suppressCorrectionOutput) {
                         document.getElementById('correctionOutput').textContent = '';
                     }
                 } else {
                     document.getElementById('autoFixContainer').innerHTML = '';
                     document.getElementById('errorOutput').innerHTML = '';
-                    if (isAutoValidation) {
-                        let prev = document.getElementById('correctionOutput').innerHTML.trim();
-                        if (prev) {
-                            prev = '<br>'+prev;
-                        } else {
-                            prev = '';
-                        }
-                        document.getElementById('correctionOutput').innerHTML = '<ul><li>JSON валиден по схеме</li></ul>' + prev;
-                    } else {
+                    if (!isAutoValidation && !suppressCorrectionOutput) {
                         document.getElementById('correctionOutput').innerHTML = `<ul><li>JSON валиден по схеме</li></ul>`;
                     }
                 }
@@ -1167,18 +1250,22 @@
                     document.getElementById('errorOutput').innerHTML = `<ul><li>Необходимо сперва открыть файл шаблона</li></ul>`;
                     return;
                 }
+                // Очищаем выводы при нажатии кнопки
+                document.getElementById('errorOutput').textContent = '';
+                document.getElementById('correctionOutput').textContent = '';
+                document.getElementById('autoFixContainer').innerHTML = '';
+                
                 let json = JSON.parse(value);
+                oneClickFixMode = false;
                 selectTemplateWithDropdown(json, (selectedIndex) => {
                     const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
                     
                     const { finalJson, corrections } = applyCorrections(selectedTemplate);
 
                     editor.setValue(JSON.stringify(finalJson, null, 2));
-                    document.getElementById('errorOutput').textContent = '';
                     document.getElementById('correctionOutput').innerHTML = corrections.length > 0
                         ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
                         : '<ul><li>Исправления не требовались</li></ul>';
-                    document.getElementById('autoFixContainer').innerHTML = '';
                     clearErrorHighlights();
                     editor.refresh();
                 });
@@ -1192,24 +1279,49 @@
             const openFileFirst = document.getElementById('oneClickOpenFileCheckbox').checked;
             if (openFileFirst) {
                 // Открыть диалог выбора файла, затем продолжить после выбора
-                const fileInput = document.getElementById('uploadFile');
+                const fileInput = document.getElementById('autoFixFileInput');
                 fileInput.onchange = async function(event) {
                     const file = event.target.files[0];
+                    event.target.value = '';
                     if (file) {
                         const reader = new FileReader();
                         reader.onload = async function(e) {
                             try {
-                                editor.setValue(e.target.result);
-                                await new Promise(r => setTimeout(r, 50));
-                                await oneClickFixRun();
+                                const fileContent = e.target.result;
+                                let parsed;
+                                try {
+                                    parsed = JSON.parse(fileContent);
+                                } catch (err) {
+                                    document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка чтения файла: ${err.message}</li></ul>`;
+                                    return;
+                                }
+                                
+                                // Очищаем выводы при открытии файла
+                                document.getElementById('errorOutput').textContent = '';
+                                document.getElementById('correctionOutput').textContent = '';
+                                document.getElementById('autoFixContainer').innerHTML = '';
+                                
+                                if (Array.isArray(parsed) && parsed.length > 1) {
+                                    // Несколько шаблонов - показываем диалог выбора с автоисправлением
+                                    oneClickFixMode = true;
+                                    selectTemplateWithDropdown(parsed, (selectedIndex) => {
+                                        const selectedTemplate = parsed[selectedIndex];
+                                        editor.setValue(JSON.stringify(selectedTemplate, null, 2));
+                                        editor.refresh();
+                                    });
+                                } else {
+                                    // Один шаблон - загружаем и запускаем автоисправление
+                                    const template = Array.isArray(parsed) ? parsed[0] : parsed;
+                                    editor.setValue(JSON.stringify(template, null, 2));
+                                    editor.refresh();
+                                    await oneClickFixRun();
+                                }
                             } catch (err) {
                                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка чтения файла: ${err.message}</li></ul>`;
                             }
                         };
                         reader.readAsText(file);
                     }
-                    event.target.value = '';
-                    fileInput.onchange = null;
                 };
                 fileInput.click();
                 return;
@@ -1233,26 +1345,30 @@
                 }
                 const { finalJson, corrections } = applyCorrections(json);
                 editor.setValue(JSON.stringify(finalJson, null, 2));
-                document.getElementById('correctionOutput').innerHTML = corrections.length > 0
-                    ? `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`
-                    : '<ul><li>Исправления не требовались.</li></ul>';
+                if (corrections.length > 0) {
+                    document.getElementById('correctionOutput').innerHTML += `<ul>${corrections.map(c => `<li>${c}</li>`).join('')}</ul>`;
+                } else {
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Исправления не требовались.</li></ul>';
+                }
                 
                 await new Promise(r => setTimeout(r, 50));
 
                 // Step 2: Validate
-                validateJson();
+                validateJson(true);
                 let hasErrors = document.getElementById('errorOutput').innerHTML.trim() !== '';
 
                 if (!hasErrors) {
-                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Ошибок не найдено, форматирование и скачивание...</li></ul>';
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Скачивание...</li></ul>';
+                    formatFromOneClick = true;
                     formatJson();
+                    formatFromOneClick = false;
                     downloadTemplate();
                     return;
                 }
 
                 // Step 3: Errors found, try auto-fix
                 document.getElementById('correctionOutput').innerHTML += '<ul><li>Найдены ошибки, попытка автоматического исправления...</li></ul>';
-                autoFixJson();
+                autoFixJson(false);
 
                 await new Promise(r => setTimeout(r, 200)); // wait for autoFixJson's internal timeout
 
@@ -1260,8 +1376,10 @@
                 hasErrors = document.getElementById('errorOutput').innerHTML.trim() !== '';
 
                 if (!hasErrors) {
-                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Авто-исправление успешно! Форматирование и скачивание...</li></ul>';
+                    document.getElementById('correctionOutput').innerHTML += '<ul><li>Авто-исправление успешно! Скачивание...</li></ul>';
+                    formatFromOneClick = true;
                     formatJson();
+                    formatFromOneClick = false;
                     downloadTemplate();
                 } else {
                     document.getElementById('correctionOutput').innerHTML += '<ul><li>Не удалось исправить все ошибки автоматически. Пожалуйста, исправьте их вручную.</li></ul>';
@@ -1292,13 +1410,462 @@
                 a.download = filename;
                 a.click();
                 URL.revokeObjectURL(url);
-                document.getElementById('errorOutput').textContent = '';
-                document.getElementById('correctionOutput').textContent = '';
-                document.getElementById('autoFixContainer').innerHTML = '';
             } catch (e) {
                 document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка скачивания: ${e.message}</li></ul>`;
             }
         }
+
+        // --- Автокомплит по схеме ---
+        function getCurrentJsonPath(cm) {
+            // Получить путь в JSON по позиции курсора (с поддержкой индексов массивов)
+            try {
+                const pos = cm.getCursor();
+                const lines = cm.getValue().split('\n');
+                let upto = lines.slice(0, pos.line + 1).join('\n');
+                upto = upto.slice(0, upto.length - (lines[pos.line].length - pos.ch));
+                
+                let path = [];
+                let stack = [];
+                let currentKey = '';
+                let inString = false;
+                let escape = false;
+                let arrayIndex = 0;
+                let inArray = false;
+                let lastKey = '';
+                
+                // Анализируем текст до курсора
+                for (let i = 0; i < upto.length; i++) {
+                    const c = upto[i];
+                    
+                    if (escape) { 
+                        escape = false; 
+                        continue; 
+                    }
+                    if (c === '\\') { 
+                        escape = true; 
+                        continue; 
+                    }
+                    
+                    if (c === '"') { 
+                        inString = !inString; 
+                        continue; 
+                    }
+                    
+                    if (!inString) {
+                        if (c === '{') {
+                            stack.push('object');
+                            inArray = false;
+                            continue;
+                        }
+                        if (c === '[') {
+                            stack.push('array');
+                            inArray = true;
+                            arrayIndex = 0;
+                            continue;
+                        }
+                        if (c === '}') {
+                            if (stack.length > 0 && stack[stack.length - 1] === 'object') {
+                                stack.pop();
+                                inArray = false;
+                                // Очищаем путь при выходе из объекта, если мы вернулись в корень
+                                if (stack.length <= 1) {
+                                    path = [];
+                                }
+                            }
+                            continue;
+                        }
+                        if (c === ']') {
+                            if (stack.length > 0 && stack[stack.length - 1] === 'array') {
+                                stack.pop();
+                                inArray = stack.length > 0 && stack[stack.length - 1] === 'array';
+                            }
+                            continue;
+                        }
+                        if (c === ':') {
+                            if (currentKey.trim()) {
+                                lastKey = currentKey.trim().replace(/"/g, '');
+                                path.push(lastKey);
+                                currentKey = '';
+                            }
+                            continue;
+                        }
+                        if (c === ',') {
+                            if (inArray && stack.length > 0 && stack[stack.length - 1] === 'array') {
+                                arrayIndex++;
+                            }
+                            currentKey = '';
+                            continue;
+                        }
+                    }
+                    
+                    if (inString) {
+                        currentKey += c;
+                    }
+                }
+                
+                // Если мы в массиве и есть текущий индекс, добавляем его
+                if (inArray && stack.length > 0 && stack[stack.length - 1] === 'array') {
+                    path.push(arrayIndex);
+                }
+                
+                // Проверяем, находимся ли мы в корневом объекте
+                // Если stack содержит только корневой объект и мы на новой строке
+                if (stack.length <= 1) {
+                    const currentLine = lines[pos.line];
+                    const beforeCursor = currentLine.slice(0, pos.ch);
+                    const afterCursor = currentLine.slice(pos.ch);
+                    
+                    // Если перед курсором только пробелы и запятая, и после курсора ничего или только пробелы
+                    // то мы в корневом объекте, вводим новое поле
+                    if (/^\s*,?\s*$/.test(beforeCursor) && /^\s*$/.test(afterCursor)) {
+                        path = [];
+                    }
+                }
+                
+                return path;
+            } catch (e) { 
+                console.error('Error in getCurrentJsonPath:', e);
+                return []; 
+            }
+        }
+
+        function getHintsForPath(path, tree) {
+            let node = tree;
+            
+            // Если путь пустой, возвращаем корневые свойства
+            if (path.length === 0) {
+                return node;
+            }
+            
+            // Обрабатываем путь по частям
+            for (let i = 0; i < path.length; i++) {
+                const p = path[i];
+                
+                if (typeof p === 'number') {
+                    // Индекс массива - пропускаем, но запоминаем контекст
+                    continue;
+                }
+                
+                // Специальная обработка для link
+                if (p === 'link') {
+                    if (schema && schema.definitions && schema.definitions.link && schema.definitions.link.properties) {
+                        node = schema.definitions.link.properties;
+                        // Останавливаемся здесь, не обрабатываем дальнейшие части пути
+                        break;
+                    }
+                }
+                
+                // Специальная обработка для characteristics
+                if (p === 'characteristics') {
+                    if (schema && schema.definitions && schema.definitions.characteristic && schema.definitions.characteristic.properties) {
+                        node = schema.definitions.characteristic.properties;
+                        // Останавливаемся здесь, не обрабатываем дальнейшие части пути
+                        break;
+                    }
+                }
+                
+                // Специальная обработка для options
+                if (p === 'options') {
+                    if (schema && schema.definitions && schema.definitions.characteristic && schema.definitions.characteristic.properties) {
+                        node = schema.definitions.characteristic.properties;
+                    }
+                } else if (servicesIndex !== -1) {
+                    // Мы в services
+                    if (schema && schema.properties && schema.properties.services && 
+                        schema.properties.services.items && schema.properties.services.items.properties) {
+                        node = schema.properties.services.items.properties;
+                    }
+                }
+                
+                // Обычное свойство
+                if (node && node[p]) {
+                    // Если у свойства есть вложенные properties, используем их
+                    if (node[p].properties) {
+                        node = node[p].properties;
+                    } else {
+                        // Иначе используем само свойство
+                        node = node[p];
+                    }
+                } else {
+                    break;
+                }
+            }
+            
+            return node;
+        }
+
+        CodeMirror.registerHelper('hint', 'json', function(cm) {
+            if (!schemaHintsTree) return;
+            const cur = cm.getCursor();
+            const token = cm.getTokenAt(cur);
+            const path = getCurrentJsonPath(cm);
+            
+            // Получаем текущий ввод пользователя для фильтрации
+            let currentWord = '';
+            let keyStart = cur.ch, keyEnd = cur.ch;
+            const line = cm.getLine(cur.line);
+            if (token && token.string && token.type === 'string') {
+                // Внутри кавычек
+                currentWord = token.string.replace(/^"|"$/g, '');
+                keyStart = token.start;
+                keyEnd = token.end;
+            } else {
+                // Вне кавычек — ищем последнее "слово" до курсора
+                const before = line.slice(0, cur.ch);
+                const match = before.match(/([\w$]+)$/);
+                if (match) {
+                    currentWord = match[1];
+                    keyStart = cur.ch - currentWord.length;
+                } else {
+                    currentWord = '';
+                    keyStart = cur.ch;
+                }
+                // ищем конец слова после курсора
+                const after = line.slice(cur.ch);
+                const matchAfter = after.match(/^([\w$]*)/);
+                if (matchAfter) {
+                    keyEnd = cur.ch + matchAfter[1].length;
+                } else {
+                    keyEnd = cur.ch;
+                }
+            }
+            
+            // Определяем текущий ключ для значения
+            let key = null;
+            if (path.length > 0) {
+                key = path[path.length - 1];
+            }
+            
+            // Инициализируем node в начале
+            let node = null;
+            
+            // Определяем контекст для всех случаев
+            const servicesIndex = path.lastIndexOf('services');
+            const characteristicsIndex = path.lastIndexOf('characteristics');
+            const linkIndex = path.lastIndexOf('link');
+            const optionsIndex = path.lastIndexOf('options');
+            
+            // Более точное определение контекста
+            // Проверяем, находимся ли мы внутри link в options или characteristics
+            let isInLinkContext = false;
+            if (linkIndex !== -1) {
+                // Проверяем, есть ли после linkIndex еще поля, которые не относятся к link
+                const pathAfterLink = path.slice(linkIndex + 1);
+                const linkSchemaFields = ['scale', 'events', 'data', 'map', 'outMap', 'setProp', 'getProp', 'inFunc', 'outFunc', 'id', 'action', 'in', 'type', 'subType', 'topicGet', 'topicSet', 'checkValue', 'minValue', 'maxValue', 'minStep', 'format', 'getBLE', 'getStatus', 'set', 'get', 'getMethod', 'setMethod', 'getCommand', 'setCommand', 'endpoint', 'cluster', 'attribute', 'command', 'sendCommand', 'source', 'group', 'manufacturerCode', 'param', 'output', 'extAttribute', 'ClusterSpecificCommand', 'frameType', 'waitResponse', 'read', 'write', 'value', 'address', 'function', 'pollingTime', 'length', 'byteOrder', 'class', 'delimiter', 'bitmask', 'description'];
+                
+                // Если после link идут поля, которые не относятся к link схеме, то мы не в link контексте
+                const hasNonLinkFields = pathAfterLink.some(field => !linkSchemaFields.includes(field));
+                isInLinkContext = !hasNonLinkFields;
+            }
+            
+            if (isInLinkContext) {
+                // Мы в link контексте - определяем, в каком именно link
+                if (optionsIndex !== -1 && linkIndex > optionsIndex) {
+                    // Мы в options[].link - используем схему link
+                    if (schema && schema.definitions && schema.definitions.link && schema.definitions.link.properties) {
+                        node = schema.definitions.link.properties;
+                    }
+                } else if (characteristicsIndex !== -1 && linkIndex > characteristicsIndex) {
+                    // Мы в characteristics[].link - используем схему link
+                    if (schema && schema.definitions && schema.definitions.link && schema.definitions.link.properties) {
+                        node = schema.definitions.link.properties;
+                    }
+                } else {
+                    // Мы в link на корневом уровне - используем схему link
+                    if (schema && schema.definitions && schema.definitions.link && schema.definitions.link.properties) {
+                        node = schema.definitions.link.properties;
+                    }
+                }
+            } else if (optionsIndex !== -1) {
+                // Мы в options - используем схему characteristic
+                if (schema && schema.definitions && schema.definitions.characteristic && schema.definitions.characteristic.properties) {
+                    node = schema.definitions.characteristic.properties;
+                }
+            } else if (characteristicsIndex !== -1) {
+                // Мы в characteristics
+                if (schema && schema.definitions && schema.definitions.characteristic && schema.definitions.characteristic.properties) {
+                    node = schema.definitions.characteristic.properties;
+                }
+            } else if (servicesIndex !== -1) {
+                // Мы в services
+                if (schema && schema.properties && schema.properties.services && 
+                    schema.properties.services.items && schema.properties.services.items.properties) {
+                    node = schema.properties.services.items.properties;
+                }
+            } else {
+                // Мы в корневых свойствах - используем schemaHintsTree напрямую
+                node = schemaHintsTree;
+            }
+            
+            
+            // Универсальная функция для проверки, находимся ли мы в значении поля
+            function isInValuePosition() {
+                const before = line.slice(0, cur.ch);
+                
+                // Проверяем различные сценарии
+                if (token && token.state && token.state.lastType === 'colon') return true;
+                if (token && token.type === 'string') return true;
+                
+                // После двоеточия с пробелами (включая 0)
+                if (/:\s*$/.test(before)) return true;
+                
+                // Внутри кавычек после двоеточия
+                if (/:\s*"/.test(before) && token && token.type === 'string') return true;
+                
+                // После двоеточия с пробелами и текстом (но не в кавычках)
+                if (/:\s+\S/.test(before) && !/:\s*"/.test(before)) return true;
+                
+                return false;
+            }
+            
+            // Универсальная функция для создания списка подсказок
+            function createValueSuggestions(values, wrapInQuotes = true) {
+                return values.map(v => {
+                    return {
+                        text: wrapInQuotes ? `"${v}"` : v,
+                        displayText: v,
+                        hint: function(cm, data, completion) {
+                            cm.replaceRange(wrapInQuotes ? `"${v}"` : v, {line: cur.line, ch: keyStart}, {line: cur.line, ch: keyEnd});
+                        }
+                    };
+                });
+            }
+            
+            // Если мы в значении поля и у нас есть текущий ключ
+            if (isInValuePosition() && key && node && node[key]) {
+                const field = node[key];
+                
+                // Обработка enum полей (универсально для всех полей с enum)
+                if (field.enum && field.enum.length > 0) {
+                    let enumList = createValueSuggestions(field.enum, true);
+                    // Фильтрация по текущему вводу (если есть)
+                    if (currentWord && currentWord.length > 0) {
+                        enumList = enumList.filter(item => item.displayText.toLowerCase().includes(currentWord.toLowerCase()));
+                    }
+                    return {
+                        list: enumList,
+                        from: keyStart,
+                        to: keyEnd,
+                        completeSingle: false
+                    };
+                }
+                
+                // Обработка boolean полей
+                if (field.type === 'boolean') {
+                    let booleanList = createValueSuggestions(['true', 'false'], false);
+                    // Фильтрация по текущему вводу (если есть)
+                    if (currentWord && currentWord.length > 0) {
+                        booleanList = booleanList.filter(item => item.displayText.toLowerCase().includes(currentWord.toLowerCase()));
+                    }
+                    return {
+                        list: booleanList,
+                        from: keyStart,
+                        to: keyEnd,
+                        completeSingle: false
+                    };
+                }
+                
+                // Обработка строковых полей (без enum)
+                if (field.type === 'string' && !field.enum) {
+                    let stringList = createValueSuggestions([''], true);
+                    // Фильтрация по текущему вводу (если есть)
+                    if (currentWord && currentWord.length > 0) {
+                        stringList = stringList.filter(item => item.displayText.toLowerCase().includes(currentWord.toLowerCase()));
+                    }
+                    return {
+                        list: stringList,
+                        from: keyStart,
+                        to: keyEnd,
+                        completeSingle: false
+                    };
+                }
+                
+                // Обработка объектных полей
+                if (field.type === 'object') {
+                    let objectList = createValueSuggestions(['{}'], false);
+                    // Фильтрация по текущему вводу (если есть)
+                    if (currentWord && currentWord.length > 0) {
+                        objectList = objectList.filter(item => item.displayText.toLowerCase().includes(currentWord.toLowerCase()));
+                    }
+                    return {
+                        list: objectList,
+                        from: keyStart,
+                        to: keyEnd,
+                        completeSingle: false
+                    };
+                }
+                
+                // Обработка массивных полей
+                if (field.type === 'array' || (Array.isArray(field.type) && field.type.includes('array'))) {
+                    let arrayList = createValueSuggestions(['[]'], false);
+                    // Фильтрация по текущему вводу (если есть)
+                    if (currentWord && currentWord.length > 0) {
+                        arrayList = arrayList.filter(item => item.displayText.toLowerCase().includes(currentWord.toLowerCase()));
+                    }
+                    return {
+                        list: arrayList,
+                        from: keyStart,
+                        to: keyEnd,
+                        completeSingle: false
+                    };
+                }
+                
+                // Если у поля есть подсказки для значений, не показываем ключи
+                return { list: [], from: keyStart, to: keyEnd, completeSingle: false };
+            }
+            
+            // Ключи - используем обычную логику
+            const list = [];
+            if (node) { // Добавляем проверку на null
+                for (const key in node) {
+                    if (Object.prototype.hasOwnProperty.call(node, key)) {
+                        if (currentWord && currentWord.length > 0 && !key.toLowerCase().includes(currentWord.toLowerCase())) continue;
+                        const item = node[key];
+                        let displayText = key;
+                        if (item && item.type) displayText += ` (${item.type})`;
+                        if (item && item.enum) displayText += ` [${item.enum.join(', ')}]`;
+                        list.push({
+                            text: key,
+                            displayText: displayText,
+                            render: function(el, self, data) {
+                                el.innerHTML = `<span style='font-weight:bold'>${key}</span> <span style='color:#888'>${item && item.type ? item.type : ''}</span> <span style='color:#0a0'>${item && item.enum ? '['+item.enum.join(', ')+']' : ''}</span><br><span style='font-size:smaller;color:#888'>${item && item.description ? item.description : ''}</span>`;
+                            },
+                            hint: function(cm, data, completion) {
+                                // Заменяем всё, что пользователь начал вводить (и кавычки, и текст, и просто слово)
+                                cm.replaceRange('"' + key + '": ', {line: cur.line, ch: keyStart}, {line: cur.line, ch: keyEnd});
+                            }
+                        });
+                    }
+                }
+            }
+            
+            // Сортируем список по алфавиту
+            list.sort((a, b) => a.text.localeCompare(b.text));
+            
+            let from = keyStart;
+            let to = keyEnd;
+            return {
+                list: list,
+                from,
+                to,
+                completeSingle: false
+            };
+        });
+
+        editor.on('inputRead', function(cm, change) {
+            if (change.text[0] && /[\w\{\[\:"]/.test(change.text[0])) {
+                cm.showHint({completeSingle: false});
+            }
+            // Дополнительно вызываем автокомплит при вводе пробела после двоеточия
+            if (change.text[0] === ' ') {
+                const cur = cm.getCursor();
+                const line = cm.getLine(cur.line);
+                const before = line.slice(0, cur.ch);
+                if (/:\s*$/.test(before)) {
+                    setTimeout(() => cm.showHint({completeSingle: false}), 10);
+                }
+            }
+        });
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-<script type="text/javascript">
+Cound<script type="text/javascript">
         var gk_isXlsx = false;
         var gk_xlsxFileLookup = {};
         var gk_fileData = {};
@@ -314,6 +314,80 @@
         body.dark .CodeMirror-hints::-webkit-scrollbar-thumb {
             background: #444;
         }
+        #countdownContainer {
+            border: 2px solid #888;
+            border-radius: 12px;
+            padding: 24px 16px;
+            background: #f4f4f4;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            text-align: center;
+        }
+        #countdownTitle {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        #countdownTimer {
+            font-size: 2em;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 10px;
+            color: #2a2a2a;
+        }
+        .countdown-links {
+            margin-top: 18px;
+            text-align: center;
+        }
+        .countdown-links-title {
+            font-size: 1.1em;
+            margin-bottom: 6px;
+        }
+        .countdown-link {
+            display: inline-block;
+            margin: 0 8px 8px 8px;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+        .countdown-link.vk {
+            color: #1565c0;
+        }
+        .countdown-link.yt {
+            color: #e53935;
+        }
+        .countdown-changelog {
+            margin-top: 10px;
+            font-size: 1em;
+        }
+        .countdown-changelog a {
+            color: #008080;
+            text-decoration: underline;
+            font-weight: bold;
+        }
+        body.dark #countdownContainer {
+            background: #232323;
+            border-color: #444;
+            color: #fff;
+        }
+        body.dark #countdownTimer {
+            color: #fff;
+        }
+        body.dark .countdown-link.vk {
+            color: #42a5f5;
+        }
+        body.dark .countdown-link.yt {
+            color: #ff5252;
+        }
+        body.dark .countdown-changelog a {
+            color: #00d8d8;
+        }
+        #countdownBlock {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 40px auto 0 auto;
+            max-width: 600px;
+            margin-bottom: 100px;
+        }
     </style>
 </head>
 <body class="system">
@@ -390,6 +464,22 @@
             Автор Кирилл Ашихмин<br>
             Исходники: <a href="https://github.com/KirillAshikhmin/Sprut.Hub_Tools" target="_blank">https://github.com/KirillAshikhmin/Sprut.Hub_Tools</a><br>
             Телеграм: <a href="https://t.me/smart_sputnik" target="_blank">https://t.me/smart_sputnik</a>
+        </div>
+    </div>
+
+    <!-- Блок обратного отсчёта и ссылок -->
+    <div id="countdownBlock">
+        <div id="countdownContainer">
+            <div id="countdownTitle">До стрима и выхода беты 1.12.2 осталось:</div>
+            <div id="countdownTimer"></div>
+        </div>
+        <div class="countdown-links">
+            <div class="countdown-links-title">Смотреть стрим:</div>
+            <a href="https://vkvideo.ru/video-119758871_456239216" target="_blank" class="countdown-link vk">VK Видео</a>
+            <a href="https://www.youtube.com/sprut666666" target="_blank" class="countdown-link yt">YouTube</a>
+            <div class="countdown-changelog">Чейнджлог новой версии:<br>
+                <a href="https://t.me/SprutHub_Changelog" target="_blank">@SprutHub_Changelog</a>
+            </div>
         </div>
     </div>
 
@@ -1866,6 +1956,28 @@
                 }
             }
         });
+
+        // Обратный отсчёт до 28.06.2025 20:00 МСК
+        (function() {
+            // МСК = UTC+3
+            const targetDate = new Date(Date.UTC(2025, 5, 28, 17, 0, 0)); // 28 июня 2025, 20:00 МСК = 17:00 UTC
+            const timerEl = document.getElementById('countdownTimer');
+            function updateCountdown() {
+                const now = new Date();
+                const diff = targetDate - now;
+                if (diff <= 0) {
+                    timerEl.textContent = '00д 00ч 00м 00с';
+                    return;
+                }
+                const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                const mins = Math.floor((diff / (1000 * 60)) % 60);
+                const secs = Math.floor((diff / 1000) % 60);
+                timerEl.textContent = `${days.toString().padStart(2,'0')}д ${hours.toString().padStart(2,'0')}ч ${mins.toString().padStart(2,'0')}м ${secs.toString().padStart(2,'0')}с`;
+            }
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        })();
     </script>
 </body>
 </html>

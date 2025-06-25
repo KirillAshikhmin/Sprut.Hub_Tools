@@ -863,15 +863,6 @@
     "name": {
       "type": "string"
     },
-    "description": {
-      "type": "string"
-    },
-    "minRevision": {
-      "type": "integer"
-    },
-    "maxRevision": {
-      "type": "integer"
-    },
     "manufacturer": {
       "type": "string",
       "description": "Manufacturer"
@@ -888,53 +879,9 @@
       "type": "string",
       "description": "Model ID"
     },
-    "powerMode": {
-      "type": "string",
-      "enum": [
-        "POWER",
-        "BATTERY",
-        "BATTERY_RECEIVER"
-      ]
-    },
-    "otaSupport": {
-      "type": "boolean"
-    },
-    "imageType": {
-      "type": "integer"
-    },
-    "optional": {
-      "type": [
-        "string",
-        "object"
-      ]
-    },
-    "comment": {
-      "type": "string"
-    },
-    "date": {
-      "type": "string"
-    },
-    "overview": {
-      "type": "string"
-    },
     "catalogId": {
       "type": "integer",
       "description": "Catalog ID"
-    },
-    "url": {
-      "type": "string"
-    },
-    "ali": {
-      "type": "string"
-    },
-    "ali2": {
-      "type": "string"
-    },
-    "TODO": {
-      "type": "string"
-    },
-    "otaReInitAfterUpdate": {
-      "type": "boolean"
     },
     "issue": {
       "type": "string",
@@ -949,6 +896,59 @@
     },
     "visible": {
       "type": "boolean"
+    },
+    "powerMode": {
+      "type": "string",
+      "enum": [
+        "POWER",
+        "BATTERY",
+        "BATTERY_RECEIVER"
+      ]
+    },
+    "minRevision": {
+      "type": "integer"
+    },
+    "maxRevision": {
+      "type": "integer"
+    },
+    "description": {
+      "type": "string"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "otaSupport": {
+      "type": "boolean"
+    },
+    "otaReInitAfterUpdate": {
+      "type": "boolean"
+    },
+    "imageType": {
+      "type": "integer"
+    },
+    "date": {
+      "type": "string"
+    },
+    "optional": {
+      "type": [
+        "string",
+        "object"
+      ]
+    },
+    "overview": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "ali": {
+      "type": "string"
+    },
+    "ali2": {
+      "type": "string"
+    },
+    "TODO": {
+      "type": "string"
     },
     "template": {
       "type": [

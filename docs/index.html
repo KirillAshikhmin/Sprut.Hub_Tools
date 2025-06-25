@@ -504,17 +504,17 @@
         let schema = {};
         let allowedInputTypesFromSchema = [];
         
-        fetch('./schema.json')
+        fetch('./accessory.json')
             .then(response => response.json())
             .then(data => {
                 schema = data;
                 schemaHintsTree = buildSchemaHintsTree(data);
             })
             .catch(error => {
-                console.error('Ошибка загрузки schema.json:', error);
-                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки schema.json: ${error.message}</li></ul>`;
+                console.error('Ошибка загрузки accessory.json:', error);
+                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки accessory.json: ${error.message}</li></ul>`;
             });
-            
+        
         let schemaHintsTree = null;
         function buildSchemaHintsTree(schema) {
             // Рекурсивно строим дерево ключей и enum-значений
@@ -1314,27 +1314,19 @@
             }
 
             // Reorder keys for better readability before displaying
-            const keyOrder = [
-                'name', 'description', 'optional', 'comment', 'overview', 'room', 
-                'manufacturer', 'model', 'manufacturerId', 'modelId', 'status', 
-                'catalogId', 'issue', 'url', 'ali', 'ali2', 'minRevision', 
-                'maxRevision', 'powerMode', 'otaSupport', 'otaReInitAfterUpdate', 
-                'imageType', 'date', 'TODO', 'visible', 'template', 'init', 
-                'services', 'options'
-            ];
-
+            let keyOrder = [];
+            if (schema && schema.properties) {
+                keyOrder = Object.keys(schema.properties);
+            }
             const orderedJson = {};
             const remainingKeys = { ...newJson };
-
             for (const key of keyOrder) {
                 if (Object.prototype.hasOwnProperty.call(newJson, key)) {
                     orderedJson[key] = newJson[key];
                     delete remainingKeys[key];
                 }
             }
-
             Object.assign(orderedJson, remainingKeys);
-
             return { finalJson: orderedJson, corrections };
         }
 

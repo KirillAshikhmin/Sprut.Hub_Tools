@@ -304,43 +304,46 @@
     "optional": {
       "oneOf": [
         {
-          "type": "object",
-          "properties": {
-            "link": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "enum": [
-                      "Integer",
-                      "String",
-                      "Boolean",
-                      "Double"
-                    ]
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "link": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "Integer",
+                        "String",
+                        "Boolean",
+                        "Double"
+                      ]
+                    },
+                    "address": {
+                      "type": "integer"
+                    },
+                    "function": {
+                      "type": "string"
+                    }
                   },
-                  "address": {
-                    "type": "integer"
-                  },
-                  "function": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type"
-                ],
-                "additionalProperties": false
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "value": {
+                "type": "string"
               }
             },
-            "value": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "value"
-          ],
-          "additionalProperties": false
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
+          }
         },
         {
           "type": "boolean"

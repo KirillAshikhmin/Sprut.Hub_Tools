@@ -452,7 +452,6 @@
                         <input type="checkbox" id="strictSchemaCheckbox">
                         Использовать более строгую схему
                     </label>
-                    <div id="schemaIndicator" style="font-size:12px;color:#888;margin-top:2px;"></div>
                 </div>
                 <div class="schema-buttons-row">
                     <button onclick="correctJson()">Исправить под требования Sprut.hub</button>
@@ -559,11 +558,6 @@
         }
         function loadSchema(isStrict) {
             const schemaFile = isStrict ? './accessory_full.json' : './accessory.json';
-            // Индикатор используемой схемы
-            const indicator = document.getElementById('schemaIndicator');
-            if (indicator) {
-                indicator.textContent = `Используется схема: ${isStrict ? 'accessory_full.json (строгая)' : 'accessory.json (обычная)'}`;
-            }
             fetch(schemaFile)
                 .then(response => response.json())
                 .then(data => {

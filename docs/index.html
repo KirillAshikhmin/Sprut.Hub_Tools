@@ -131,8 +131,9 @@
         }
         .left-buttons {
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0;
         }
         .right-buttons {
             display: flex;
@@ -398,6 +399,19 @@
             color: #888;
             margin-top: 5px;
         }
+        /* --- Schema strict checkbox and buttons row --- */
+        .schema-checkbox-row {
+            margin-bottom: 8px;
+        }
+        .schema-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .schema-buttons-row {
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body class="system">
@@ -433,9 +447,18 @@
         </div>
         <div class="button-row-bottom">
             <div class="left-buttons">
-                <button onclick="correctJson()">Исправить под требования Sprut.hub</button>
-                <button onclick="validateJson()">Валидировать</button>
-                <button onclick="formatJson()">Форматировать</button>
+                <div class="schema-checkbox-row">
+                    <label class="schema-checkbox-label">
+                        <input type="checkbox" id="strictSchemaCheckbox">
+                        Использовать более строгую схему
+                    </label>
+                    <div id="schemaIndicator" style="font-size:12px;color:#888;margin-top:2px;"></div>
+                </div>
+                <div class="schema-buttons-row">
+                    <button onclick="correctJson()">Исправить под требования Sprut.hub</button>
+                    <button onclick="validateJson()">Валидировать</button>
+                    <button onclick="formatJson()">Форматировать</button>
+                </div>
             </div>
             <div class="right-buttons">
                 <div style="margin-bottom: 6px;">
@@ -505,22 +528,11 @@
             viewportMargin: Infinity
         });
 
-        // Загрузка JSON Schema
+        // --- Схема аксессуара ---
         let schema = {};
         let allowedInputTypesFromSchema = [];
-        
-        fetch('./accessory.json')
-            .then(response => response.json())
-            .then(data => {
-                schema = data;
-                schemaHintsTree = buildSchemaHintsTree(data);
-            })
-            .catch(error => {
-                console.error('Ошибка загрузки accessory.json:', error);
-                document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки accessory.json: ${error.message}</li></ul>`;
-            });
-        
         let schemaHintsTree = null;
+        // Функция buildSchemaHintsTree должна быть определена до loadSchema
         function buildSchemaHintsTree(schema) {
             // Рекурсивно строим дерево ключей и enum-значений
             function walk(def, path = []) {
@@ -538,16 +550,43 @@
                 }
                 return result;
             }
-            
             let tree = {};
-            
             // Корневые свойства
             if (schema.properties) {
                 tree = walk(schema);
             }
-            
             return tree;
         }
+        function loadSchema(isStrict) {
+            const schemaFile = isStrict ? './accessory_full.json' : './accessory.json';
+            // Индикатор используемой схемы
+            const indicator = document.getElementById('schemaIndicator');
+            if (indicator) {
+                indicator.textContent = `Используется схема: ${isStrict ? 'accessory_full.json (строгая)' : 'accessory.json (обычная)'}`;
+            }
+            fetch(schemaFile)
+                .then(response => response.json())
+                .then(data => {
+                    schema = data;
+                    schemaHintsTree = buildSchemaHintsTree(data);
+                })
+                .catch(error => {
+                    console.error('Ошибка загрузки accessory.json:', error);
+                    document.getElementById('errorOutput').innerHTML = `<ul><li>Ошибка загрузки accessory.json: ${error.message}</li></ul>`;
+                });
+        }
+        // ---
+        // Чекбокс строгой схемы
+        const strictSchemaCheckbox = document.getElementById('strictSchemaCheckbox');
+        // Восстановить состояние из localStorage
+        strictSchemaCheckbox.checked = localStorage.getItem('strictSchemaCheckbox') === 'true';
+        // Загрузить схему при старте
+        loadSchema(strictSchemaCheckbox.checked);
+        // Сохранять состояние и перезагружать схему при изменении
+        strictSchemaCheckbox.addEventListener('change', function() {
+            localStorage.setItem('strictSchemaCheckbox', strictSchemaCheckbox.checked);
+            loadSchema(strictSchemaCheckbox.checked);
+        });
 
         // Загрузка sh_types.json
         let shTypes = [];
@@ -2094,24 +2133,37 @@
             }
             // changelog.txt
             let totalChanges = 0;
+            const changedFiles = [];
+            const unchangedFiles = [];
             for (const entry of changelogArr) {
                 if (entry.changes && entry.changes[0] !== "Изменений не внесено") {
                     totalChanges += entry.changes.length;
+                    changedFiles.push(entry);
+                } else {
+                    unchangedFiles.push(entry.file);
                 }
             }
             let changelogTxt = '';
             changelogTxt += `Всего шаблонов: ${totalTemplates}\n`;
             changelogTxt += `Изменено: ${changedTemplates} (изменений: ${totalChanges})\n`;
             changelogTxt += `Шаблонов с ошибками: ${errorFiles} (смотрите файл error.txt)\n\n`;
-            if (changelogArr.length === 0) {
+            // Сначала только файлы с изменениями
+            if (changedFiles.length === 0) {
                 changelogTxt += 'Нет изменений\n';
             } else {
-                for (const entry of changelogArr) {
+                for (const entry of changedFiles) {
                     changelogTxt += `${entry.file}\n`;
                     for (const change of entry.changes) {
-                        changelogTxt += `  - ${change}\n`;
+                        changelogTxt += `  ${change}\n`;
                     }
                     changelogTxt += '\n';
+                }
+            }
+            // Затем список файлов без изменений
+            if (unchangedFiles.length > 0) {
+                changelogTxt += 'Файлы без изменений:\n';
+                for (const file of unchangedFiles) {
+                    changelogTxt += `${file}\n`;
                 }
             }
             newZip.file('changelog.txt', changelogTxt);
@@ -2259,24 +2311,37 @@
             }
             // changelog.txt
             totalChanges = 0;
+            const changedFiles = [];
+            const unchangedFiles = [];
             for (const entry of changelogArr) {
                 if (entry.changes && entry.changes[0] !== "Изменений не внесено") {
                     totalChanges += entry.changes.length;
+                    changedFiles.push(entry);
+                } else {
+                    unchangedFiles.push(entry.file);
                 }
             }
             changelogTxt = '';
             changelogTxt += `Всего шаблонов: ${totalTemplates}\n`;
             changelogTxt += `Изменено: ${changedTemplates} (изменений: ${totalChanges})\n`;
             changelogTxt += `Шаблонов с ошибками: ${errorFiles} (смотрите файл error.txt)\n\n`;
-            if (changelogArr.length === 0) {
+            // Сначала только файлы с изменениями
+            if (changedFiles.length === 0) {
                 changelogTxt += 'Нет изменений\n';
             } else {
-                for (const entry of changelogArr) {
+                for (const entry of changedFiles) {
                     changelogTxt += `${entry.file}\n`;
                     for (const change of entry.changes) {
-                        changelogTxt += `  - ${change}\n`;
+                        changelogTxt += `  ${change}\n`;
                     }
                     changelogTxt += '\n';
+                }
+            }
+            // Затем список файлов без изменений
+            if (unchangedFiles.length > 0) {
+                changelogTxt += 'Файлы без изменений:\n';
+                for (const file of unchangedFiles) {
+                    changelogTxt += `${file}\n`;
                 }
             }
             newZip.file('changelog.txt', changelogTxt);

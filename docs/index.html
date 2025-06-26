@@ -59,6 +59,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-untar@2.0.0/build/dist/untar.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="corrections.js"></script>
     <!-- <script src="https://cdn.jsdelivr.net/npm/tar-js@0.3.0/lib/tar.min.js"></script> -->
     <style>
         body {
@@ -403,7 +404,6 @@
         .schema-buttons-row {
             display: flex;
             gap: 10px;
-            margin-top: 10px;
         }
     </style>
 </head>
@@ -668,10 +668,14 @@
                         document.getElementById('errorOutput').textContent = '';
                         document.getElementById('correctionOutput').textContent = '';
                         document.getElementById('autoFixContainer').innerHTML = '';
-                        if (Array.isArray(parsed) && parsed.length > 1) {
+                        if (
+                            (Array.isArray(parsed) && parsed.length > 1) ||
+                            (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 1 && Object.keys(parsed).every(k => /^\d+$/.test(k)))
+                        ) {
                             // Несколько шаблонов - показываем диалог выбора
                             selectTemplateWithDropdown(parsed, (selectedIndex) => {
-                                const selectedTemplate = parsed[selectedIndex];
+                                let templates = Array.isArray(parsed) ? parsed : Object.values(parsed);
+                                const selectedTemplate = templates[selectedIndex];
                                 editor.setValue(JSON.stringify(selectedTemplate, null, 2));
                                 editor.refresh();
                             });
@@ -991,7 +995,7 @@
                 
                 let json = JSON.parse(editor.getValue());
                 const corrections = [];
-                const ajv = new Ajv({ allErrors: true });
+                const ajv = new Ajv({ allErrors: true, logger: false });
                 const validate = ajv.compile(schema);
                 validate(json);
 
@@ -1112,7 +1116,7 @@
 
                 validateServiceAndCharacteristics(json, errors, warnings, jsonStr);
 
-                const ajv = new Ajv({ allErrors: true });
+                const ajv = new Ajv({ allErrors: true, logger: false });
                 const validate = ajv.compile(schema);
                 const valid = validate(json);
 
@@ -1205,8 +1209,10 @@
                 }
             }
 
-            // Key renames
+            // --- Замена разделителей и переименование ключей ---
             let renameCorrectionAdded = false;
+            let separatorCorrectionAdded = false;
+
             const renameMap = {
                 mapOut: 'outMap',
                 mapIn: 'map',
@@ -1216,20 +1222,24 @@
                 funcIn: 'inFunc'
             };
 
-            function renameRecursively(obj) {
+            function processRecursively(obj) {
                 if (!obj || typeof obj !== 'object') {
                     return;
                 }
                 if (Array.isArray(obj)) {
-                    obj.forEach(renameRecursively);
+                    obj.forEach(processRecursively);
                     return;
                 }
 
+                // Переименование ключей
+                const currentKeys = Object.keys(obj);
                 let renamedInThisObject = false;
-                for (const oldKey in renameMap) {
-                    if (obj.hasOwnProperty(oldKey)) {
+                for (const oldKey of currentKeys) {
+                    if (renameMap.hasOwnProperty(oldKey)) {
                         const newKey = renameMap[oldKey];
-                        obj[newKey] = obj[oldKey];
+                        if (!obj.hasOwnProperty(newKey)) { // чтобы не затереть существующий ключ
+                           obj[newKey] = obj[oldKey];
+                        }
                         delete obj[oldKey];
                         renamedInThisObject = true;
                     }
@@ -1240,14 +1250,31 @@
                     renameCorrectionAdded = true;
                 }
 
+                // Обход всех ключей для дальнейшей обработки
                 for (const key in obj) {
                     if (obj.hasOwnProperty(key)) {
-                        renameRecursively(obj[key]);
+                        const value = obj[key];
+                        // Замена разделителей
+                        if (key === 'validValues' && typeof value === 'string' && value.includes(';')) {
+                            obj[key] = value.replace(/;/g, ',');
+                            if (!separatorCorrectionAdded) separatorCorrectionAdded = true;
+                        }
+                        if ((key === 'map' || key === 'outMap') && typeof value === 'string' && value.includes(',')) {
+                            obj[key] = value.replace(/,/g, ';');
+                            if (!separatorCorrectionAdded) separatorCorrectionAdded = true;
+                        }
+
+                        // Рекурсивный вызов для вложенных объектов
+                        processRecursively(value);
                     }
                 }
             }
+
+            processRecursively(newJson);
             
-            renameRecursively(newJson);
+            if (separatorCorrectionAdded) {
+                corrections.push("Произведена замена разделителей: в `validValues` (`;` на `,`), в `map`/`outMap` (`,` на `;`).");
+            }
 
             // Исправление template
             if (typeof newJson.template === 'string') {
@@ -1360,9 +1387,9 @@
                 let json = JSON.parse(value);
                 oneClickFixMode = false;
                 selectTemplateWithDropdown(json, (selectedIndex) => {
-                    const selectedTemplate = Array.isArray(json) ? (selectedIndex !== undefined ? json[selectedIndex] : json) : json;
-                    
-                    const { finalJson, corrections } = applyCorrections(selectedTemplate);
+                    let templates = Array.isArray(json) ? json : (json && typeof json === 'object' && Object.keys(json).every(k => /^\d+$/.test(k))) ? Object.values(json) : [json];
+                    const selectedTemplate = templates[selectedIndex] !== undefined ? templates[selectedIndex] : templates[0];
+                    const { finalJson, corrections } = applyCorrections(selectedTemplate, schema);
 
                     editor.setValue(JSON.stringify(finalJson, null, 2));
                     document.getElementById('correctionOutput').innerHTML = corrections.length > 0
@@ -1996,44 +2023,37 @@
             setInterval(updateCountdown, 1000);
         })();
 
-        // --- ZIP обработка ---
-        async function processZipArchive(file) {
-            const statusEl = document.getElementById('correctionOutput');
-            statusEl.innerHTML = '<ul><li>Распаковка архива...</li></ul>';
-            const zip = await JSZip.loadAsync(file);
-            let totalFiles = 0;
+        // --- Общая обработка шаблонов для архивов ---
+        async function processTemplateFiles(fileEntries, getFileContent, archiveName, saveFileCallback, statusEl) {
+            let totalFiles = fileEntries.length;
             let processedFiles = 0;
             let totalTemplates = 0;
             let changedTemplates = 0;
             let errorFiles = 0;
             const errorLog = [];
             const changelogArr = [];
-            const newZip = new JSZip();
-            // Собираем список всех файлов, игнорируем __MACOSX
-            const fileEntries = [];
-            zip.forEach((relativePath, zipEntry) => {
-                if (!zipEntry.dir && !relativePath.startsWith('__MACOSX/')) fileEntries.push({relativePath, zipEntry});
-            });
-            totalFiles = fileEntries.length;
-            // Рекурсивная обработка
-            for (const {relativePath, zipEntry} of fileEntries) {
+            const templatePairs = [];
+            for (const {relativePath} of fileEntries) {
                 statusEl.innerHTML = `<ul><li>Обработано ${processedFiles} файлов из ${totalFiles}. Обрабатывается: ${relativePath}</li></ul>`;
                 if (relativePath.endsWith('.json')) {
                     try {
-                        let content = await zipEntry.async('string');
+                        let content = await getFileContent(relativePath);
                         // Удаляем BOM (Byte Order Mark)
-                        content = content.replace(/^\uFEFF/, '').replace(/^\u0000FF/, '');
+                        if (typeof content === 'string') {
+                            content = content.replace(/^\u0000FF/, '').replace(/^\uFEFF/, '');
+                        } else if (content instanceof Uint8Array) {
+                            content = new TextDecoder('utf-8').decode(content).replace(/^\uFEFF/, '').replace(/^\u0000FF/, '');
+                        }
                         let parsed;
                         try {
                             parsed = JSON.parse(content);
                         } catch (e) {
                             errorLog.push(`${relativePath}\nОшибка чтения JSON: ${e.message}\n\n`);
-                            newZip.file(relativePath, content); // кладём как есть
+                            saveFileCallback(relativePath, content);
                             errorFiles++;
                             processedFiles++;
                             continue;
                         }
-                        // --- Разбивка массивов и объектов с числовыми ключами ---
                         let templates = [];
                         if (Array.isArray(parsed)) {
                             templates = parsed;
@@ -2052,23 +2072,33 @@
                         }
                         for (let i = 0; i < templates.length; i++) {
                             let t = templates[i];
+                            // --- Сбор manufacturerId/modelId для поиска дублей ---
+                            let manufacturer = t.manufacturerId || t.manufacturer || '';
+                            let model = t.modelId || t.model || '';
+                            let fileName = relativePath.replace(/\.json$/i, isMulti ? `_${i+1}.json` : `.json`);
+                            if (typeof manufacturer === 'string' && typeof model === 'string') {
+                                manufacturer.split('|').forEach(manu => {
+                                    model.split('|').forEach(mod => {
+                                        templatePairs.push({ manufacturer: manu.trim(), model: mod.trim(), file: '/' + fileName });
+                                    });
+                                });
+                            }
                             let result, corrections = [];
                             try {
                                 ({finalJson: result, corrections} = applyCorrections(t));
                             } catch (e) {
                                 errorLog.push(`${relativePath}\nОшибка исправления: ${e.message}\n\n`);
-                                newZip.file(relativePath, content); // кладём как есть
+                                saveFileCallback(relativePath, content);
                                 errorFiles++;
                                 continue;
                             }
-                            // Валидация
                             let errors = [];
                             try {
-                                const ajv = new Ajv({ allErrors: true });
+                                const ajv = new Ajv({ allErrors: true, logger: false });
                                 const validate = ajv.compile(schema);
                                 const valid = validate(result);
                                 if (!valid && validate.errors) {
-                                    errors = validate.errors.map(e => translateAjvError(e, result, JSON.stringify(result)).message);
+                                    errors = validate.errors.map(e => translateAjvError(e, result, content).message);
                                 }
                             } catch (e) {
                                 errors.push('Ошибка AJV: ' + e.message);
@@ -2077,8 +2107,8 @@
                                 errorLog.push(`${relativePath}\n${errors.join('\n')}\n\n`);
                                 errorFiles++;
                             }
-                            let outName = relativePath.replace(/\.json$/i, isMulti ? `_${i+1}.json` : `.json`);
-                            newZip.file(outName, JSON.stringify(result, null, 2));
+                            let outName = fileName;
+                            saveFileCallback(outName, JSON.stringify(result, null, 2));
                             totalTemplates++;
                             if (corrections.length > 0) changedTemplates++;
                             changelogArr.push({ file: outName, changes: corrections.length > 0 ? corrections : ["Изменений не внесено"] });
@@ -2087,20 +2117,42 @@
                         continue;
                     } catch (e) {
                         errorLog.push(`${relativePath}\nОшибка: ${e.message}\n\n`);
-                        const content = await zipEntry.async('string');
-                        newZip.file(relativePath, content);
+                        let content = await getFileContent(relativePath);
+                        saveFileCallback(relativePath, content);
                         errorFiles++;
                     }
                 } else {
-                    // Не json — просто копируем
-                    const blob = await zipEntry.async('uint8array');
-                    newZip.file(relativePath, blob);
+                    let content = await getFileContent(relativePath);
+                    saveFileCallback(relativePath, content);
                 }
                 processedFiles++;
             }
+            // --- Проверка дублей manufacturer/model ---
+            const pairMap = {};
+            const duplicates = [];
+            templatePairs.forEach(({manufacturer, model, file}) => {
+                if (!manufacturer || !model) return;
+                const key = manufacturer + '||' + model;
+                if (!pairMap[key]) pairMap[key] = [];
+                pairMap[key].push(file);
+            });
+            Object.entries(pairMap).forEach(([key, files]) => {
+                if (files.length > 1) {
+                    const [manufacturer, model] = key.split('||');
+                    files.forEach(file => {
+                        duplicates.push({manufacturer, model, file});
+                    });
+                }
+            });
+            if (duplicates.length > 0) {
+                errorFiles += new Set(duplicates.map(d => d.manufacturer + '||' + d.model)).size;
+                let msg = '<b>Есть дублирующиеся шаблоны:</b><br>' + duplicates.map(d => `${d.manufacturer} &nbsp; ${d.model} &nbsp; ${d.file}`).join('<br>');
+                document.getElementById('errorOutput').innerHTML = msg;
+                errorLog.unshift('ВНИМАНИЕ! Найдены дублирующиеся шаблоны:\n' + duplicates.map(d => `${d.manufacturer}\t${d.model}\t${d.file}`).join('\n') + '\n');
+            }
             // Добавляем error.txt
             if (errorLog.length > 0) {
-                newZip.file('error.txt', errorLog.join('\n\n'));
+                saveFileCallback('error.txt', errorLog.join('\n\n'));
             }
             // changelog.txt
             let totalChanges = 0;
@@ -2118,7 +2170,9 @@
             changelogTxt += `Всего шаблонов: ${totalTemplates}\n`;
             changelogTxt += `Изменено: ${changedTemplates} (изменений: ${totalChanges})\n`;
             changelogTxt += `Шаблонов с ошибками: ${errorFiles} (смотрите файл error.txt)\n\n`;
-            // Сначала только файлы с изменениями
+            if (duplicates.length > 0) {
+                changelogTxt += 'ВНИМАНИЕ: Найдены дублирующиеся шаблоны!\n';
+            }
             if (changedFiles.length === 0) {
                 changelogTxt += 'Нет изменений\n';
             } else {
@@ -2130,22 +2184,45 @@
                     changelogTxt += '\n';
                 }
             }
-            // Затем список файлов без изменений
             if (unchangedFiles.length > 0) {
                 changelogTxt += 'Файлы без изменений:\n';
                 for (const file of unchangedFiles) {
                     changelogTxt += `${file}\n`;
                 }
             }
-            newZip.file('changelog.txt', changelogTxt);
-            // Имя архива
-            const origName = file.name.replace(/\.(zip|tar\.gz)$/i, '');
-            const outName = `fix_${origName}.zip`;
+            saveFileCallback('changelog.txt', changelogTxt);
+            return { totalTemplates, changedTemplates, errorFiles, totalChanges };
+        }
+
+        // --- ZIP обработка ---
+        async function processZipArchive(file) {
+            const statusEl = document.getElementById('correctionOutput');
+            statusEl.innerHTML = '<ul><li>Распаковка архива...</li></ul>';
+            const zip = await JSZip.loadAsync(file);
+            // Собираем список всех файлов, игнорируем __MACOSX
+            const fileEntries = [];
+            zip.forEach((relativePath, zipEntry) => {
+                if (!zipEntry.dir && !relativePath.startsWith('__MACOSX/')) fileEntries.push({relativePath, zipEntry});
+            });
+            const newZip = new JSZip();
+            const getFileContent = async (relativePath) => {
+                const entry = fileEntries.find(e => e.relativePath === relativePath).zipEntry;
+                return await entry.async('string');
+            };
+            const saveFileCallback = (name, content) => {
+                if (typeof content === 'string') {
+                    newZip.file(name, content);
+                } else {
+                    newZip.file(name, content);
+                }
+            };
+            const archiveName = file.name.replace(/\.(zip|tar\.gz)$/i, '');
+            const { totalTemplates, changedTemplates, errorFiles, totalChanges } = await processTemplateFiles(fileEntries, getFileContent, archiveName, saveFileCallback, statusEl);
             statusEl.innerHTML = `<ul><li>Архив обработан. Скачивание...</li></ul>`;
             const blob = await newZip.generateAsync({type: 'blob'});
+            const outName = `fix_${archiveName}.zip`;
             saveAs(blob, outName);
             statusEl.innerHTML = `<ul><li>Готово! Архив скачан.</li></ul>`;
-            // Итоговая статистика
             statusEl.innerHTML += `<ul>` +
                 `<li>Всего шаблонов: ${totalTemplates}</li>` +
                 `<li>Изменено: ${changedTemplates} (изменений: ${totalChanges})</li>` +
@@ -2158,171 +2235,42 @@
             const statusEl = document.getElementById('correctionOutput');
             statusEl.innerHTML = '<ul><li>Распаковка архива .tar.gz...</li></ul>';
             await new Promise(r => setTimeout(r, 10));
-
             // Читаем файл как ArrayBuffer
             const arrayBuffer = await file.arrayBuffer();
             let tarUint8 = [];
-            let totalTemplates = 0;
-            let changedTemplates = 0;
-            let errorFiles = 0;
-            const errorLog = [];
-            const changelogArr = [];
-            try {
-                // Асинхронная распаковка gzip через pako.Inflate
-                statusEl.innerHTML += '<ul><li>Распаковка gzip...</li></ul>';
-                await new Promise(r => setTimeout(r, 10));
-                await new Promise((resolve, reject) => {
-                    const inflator = new pako.Inflate();
-                    inflator.onData = chunk => tarUint8.push(...chunk);
-                    inflator.onEnd = status => {
-                        if (status === 0) resolve();
-                        else reject(new Error('pako: ошибка распаковки'));
-                    };
-                    inflator.push(new Uint8Array(arrayBuffer), true);
-                });
-            } catch (e) {
-                statusEl.innerHTML = `<ul><li>Ошибка распаковки gzip: ${e.message}</li></ul>`;
-                return;
-            }
+            await new Promise((resolve, reject) => {
+                const inflator = new pako.Inflate();
+                inflator.onData = chunk => tarUint8.push(...chunk);
+                inflator.onEnd = status => {
+                    if (status === 0) resolve();
+                    else reject(new Error('pako: ошибка распаковки'));
+                };
+                inflator.push(new Uint8Array(arrayBuffer), true);
+            });
             statusEl.innerHTML += '<ul><li>Распаковка tar...</li></ul>';
             await new Promise(r => setTimeout(r, 10));
-
             let entries = {};
-            let processedFiles = 0;
+            const files = await untar(Uint8Array.from(tarUint8).buffer);
+            files.forEach(file => {
+                entries[file.name] = new Uint8Array(file.buffer);
+            });
+            const fileEntries = Object.keys(entries).map(name => ({relativePath: name}));
             const newZip = new JSZip();
-            try {
-                const files = await untar(Uint8Array.from(tarUint8).buffer);
-                statusEl.innerHTML += `<ul><li>Файлов в архиве: ${files.length}</li></ul>`;
-                for (const file of files) {
-                    entries[file.name] = new Uint8Array(file.buffer);
-                }
-            } catch (e) {
-                statusEl.innerHTML = `<ul><li>Ошибка распаковки tar: ${e.message}</li></ul>`;
-                return;
-            }
-            for (const [relativePath, contentArr] of Object.entries(entries)) {
-                statusEl.innerHTML = `<ul><li>Обработано ${processedFiles} файлов из ${Object.keys(entries).length}. Обрабатывается: ${relativePath}</li></ul>`;
-                if (relativePath.endsWith('.json')) {
-                    try {
-                        let content = new TextDecoder('utf-8').decode(contentArr);
-                        // Удаляем BOM (Byte Order Mark)
-                        content = content.replace(/^\uFEFF/, '').replace(/^\u0000FF/, '');
-                        let parsed;
-                        try {
-                            parsed = JSON.parse(content);
-                        } catch (e) {
-                            errorLog.push(`${relativePath}\nОшибка чтения JSON: ${e.message}\n\n`);
-                            newZip.file(relativePath, contentArr);
-                            errorFiles++;
-                            processedFiles++;
-                            continue;
-                        }
-                        let templates = [];
-                        if (Array.isArray(parsed)) {
-                            templates = parsed;
-                        } else if (
-                            parsed && typeof parsed === 'object' &&
-                            Object.keys(parsed).length > 0 &&
-                            Object.keys(parsed).every(k => /^\d+$/.test(k))
-                        ) {
-                            templates = Object.values(parsed);
-                        } else {
-                            templates = [parsed];
-                        }
-                        const isMulti = templates.length > 1;
-                        if (templates.length > 1) {
-                            statusEl.innerHTML += `<ul><li>${relativePath}: Файл содержал несколько шаблонов, разбит на ${templates.length} файла.</li></ul>`;
-                        }
-                        for (let i = 0; i < templates.length; i++) {
-                            let t = templates[i];
-                            let result, corrections = [];
-                            try {
-                                ({finalJson: result, corrections} = applyCorrections(t));
-                            } catch (e) {
-                                errorLog.push(`${relativePath}\nОшибка исправления: ${e.message}\n\n`);
-                                newZip.file(relativePath, contentArr);
-                                errorFiles++;
-                                continue;
-                            }
-                            let errors = [];
-                            try {
-                                const ajv = new Ajv({ allErrors: true });
-                                const validate = ajv.compile(schema);
-                                const valid = validate(result);
-                                if (!valid && validate.errors) {
-                                    errors = validate.errors.map(e => translateAjvError(e, result, JSON.stringify(result)).message);
-                                }
-                            } catch (e) {
-                                errors.push('Ошибка AJV: ' + e.message);
-                            }
-                            if (errors.length > 0) {
-                                errorLog.push(`${relativePath}\n${errors.join('\n')}\n\n`);
-                                errorFiles++;
-                            }
-                            let outName = relativePath.replace(/\.json$/i, isMulti ? `_${i+1}.json` : `.json`);
-                            newZip.file(outName, JSON.stringify(result, null, 2));
-                            totalTemplates++;
-                            if (corrections.length > 0) changedTemplates++;
-                            changelogArr.push({ file: outName, changes: corrections.length > 0 ? corrections : ["Изменений не внесено"] });
-                        }
-                        processedFiles++;
-                        continue;
-                    } catch (e) {
-                        errorLog.push(`${relativePath}\nОшибка: ${e.message}\n\n`);
-                        newZip.file(relativePath, contentArr);
-                        errorFiles++;
-                    }
+            const getFileContent = async (relativePath) => entries[relativePath];
+            const saveFileCallback = (name, content) => {
+                if (typeof content === 'string') {
+                    newZip.file(name, content);
                 } else {
-                    newZip.file(relativePath, contentArr);
+                    newZip.file(name, content);
                 }
-                processedFiles++;
-            }
-            if (errorLog.length > 0) {
-                newZip.file('error.txt', errorLog.join('\n\n'));
-            }
-            // changelog.txt
-            totalChanges = 0;
-            const changedFiles = [];
-            const unchangedFiles = [];
-            for (const entry of changelogArr) {
-                if (entry.changes && entry.changes[0] !== "Изменений не внесено") {
-                    totalChanges += entry.changes.length;
-                    changedFiles.push(entry);
-                } else {
-                    unchangedFiles.push(entry.file);
-                }
-            }
-            changelogTxt = '';
-            changelogTxt += `Всего шаблонов: ${totalTemplates}\n`;
-            changelogTxt += `Изменено: ${changedTemplates} (изменений: ${totalChanges})\n`;
-            changelogTxt += `Шаблонов с ошибками: ${errorFiles} (смотрите файл error.txt)\n\n`;
-            // Сначала только файлы с изменениями
-            if (changedFiles.length === 0) {
-                changelogTxt += 'Нет изменений\n';
-            } else {
-                for (const entry of changedFiles) {
-                    changelogTxt += `${entry.file}\n`;
-                    for (const change of entry.changes) {
-                        changelogTxt += `  ${change}\n`;
-                    }
-                    changelogTxt += '\n';
-                }
-            }
-            // Затем список файлов без изменений
-            if (unchangedFiles.length > 0) {
-                changelogTxt += 'Файлы без изменений:\n';
-                for (const file of unchangedFiles) {
-                    changelogTxt += `${file}\n`;
-                }
-            }
-            newZip.file('changelog.txt', changelogTxt);
+            };
+            const archiveName = file.name.replace(/\.(zip|tar\.gz)$/i, '');
+            const { totalTemplates, changedTemplates, errorFiles, totalChanges } = await processTemplateFiles(fileEntries, getFileContent, archiveName, saveFileCallback, statusEl);
             statusEl.innerHTML = `<ul><li>Архив обработан. Скачивание...</li></ul>`;
             const blob = await newZip.generateAsync({type: 'blob'});
-            const origName = file.name.replace(/\.(zip|tar\.gz)$/i, '');
-            const outName = `fix_${origName}.zip`;
+            const outName = `fix_${archiveName}.zip`;
             saveAs(blob, outName);
             statusEl.innerHTML = `<ul><li>Готово! Архив скачан.</li></ul>`;
-            // Итоговая статистика
             statusEl.innerHTML += `<ul>` +
                 `<li>Всего шаблонов: ${totalTemplates}</li>` +
                 `<li>Изменено: ${changedTemplates} (изменений: ${totalChanges})</li>` +

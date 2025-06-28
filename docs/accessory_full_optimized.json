@@ -426,7 +426,7 @@
         },
         "validValues": {
           "type": "string",
-          "pattern": "^[-A-Za-z0-9;~_, .]+$"
+          "pattern": "^[-A-Za-z0-9_, ]+$"
         },
         "minValue": {
           "type": "number"
@@ -810,6 +810,7 @@
             "GenericDouble",
             "GenericInteger",
             "GenericString",
+            "GenericLong",
             "C_CatalogId",
             "C_Long"
           ]
@@ -950,7 +951,12 @@
           "INACTIVE",
           "0",
           "ACTIVE",
-          "1"
+          "1",
+          "NONE",
+          "permadm",
+          "permadm1",
+          "permadm2",
+          "permadm3"
         ]
       }
     },
@@ -1614,6 +1620,21 @@
         ]
       }
     },
+    "enum_TrueFalse": {
+      "propertyNames": {
+        "enum": [
+          "true",
+          "1",
+          "false",
+          "0",
+          "permadm",
+          "permadm1",
+          "permadm2",
+          "permadm3",
+          "none"
+        ]
+      }
+    },
     "enum_GenericMap": {
       "type": "object",
       "additionalProperties": {
@@ -1847,14 +1868,10 @@
             "description": "for_zigbee",
             "properties": {
               "min": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 65535
+                "type": "integer"
               },
               "max": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 65535
+                "type": "integer"
               },
               "change": {
                 "type": "number"
@@ -1995,7 +2012,7 @@
                 },
                 "attribute": {
                   "type": "string",
-                  "pattern": "^[0-9A-Fa-f]{3,4}_[A-Za-z0-9_.-]+$"
+                  "pattern": "^[0-9A-Fa-f]{3,4}_[A-Za-z0-9_.-]+$|[0-9A-Fa-f]{1,4}.[0-9A-Fa-f]{1,4}.[0-9A-Fa-f]{1,4}_[A-Za-z0-9_.-]+$"
                 },
                 "scale": {
                   "type": "number"
@@ -2064,8 +2081,7 @@
             "type": "integer",
             "default": 1,
             "description": "Endpoint",
-            "minimum": 1,
-            "maximum": 255
+            "minimum": 1
           },
           "optional": {
             "$ref": "#/definitions/optional"
@@ -2280,6 +2296,36 @@
                             "outMap": {
                               "type": "object",
                               "$ref": "#/definitions/enum_InactiveActive"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "description": "On",
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "On"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "link": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "map": {
+                              "type": "object",
+                              "$ref": "#/definitions/enum_TrueFalse"
+                            },
+                            "outMap": {
+                              "type": "object",
+                              "$ref": "#/definitions/enum_TrueFalse"
                             }
                           }
                         }

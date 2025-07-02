@@ -1,0 +1,264 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0 40px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.3s, color 0.3s;
+}
+body.light {
+    background-color: #f0f0f0;
+    color: #000;
+}
+body.dark {
+    background-color: #1e1e1e;
+    color: #fff;
+}
+.container {
+    max-width: 100%;
+    margin: 20px auto;
+    flex: 1;
+}
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.header-row h1 {
+    margin: 0;
+    font-size: 24px;
+}
+.theme-toggle {
+    margin-left: 20px;
+}
+#themeSelect {
+    padding: 8px;
+    font-size: 16px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    background-color: #fff;
+    cursor: pointer;
+}
+body.dark #themeSelect {
+    background-color: #333;
+    border-color: #555;
+    color: #fff;
+}
+.editor-container {
+    border: 1px solid #ccc;
+    margin-bottom: 10px;
+    width: 100%;
+    box-sizing: border-box;
+}
+body.dark .editor-container {
+    border-color: #444;
+}
+.CodeMirror {
+    height: 70vh !important;
+    width: 100% !important;
+    box-sizing: border-box;
+}
+.button-row-top, .button-row-bottom {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.left-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+}
+.right-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+button {
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+}
+body.dark button {
+    background-color: #333;
+    border-color: #555;
+    color: #fff;
+}
+#errorOutput, #correctionOutput {
+    margin-top: 10px;
+    white-space: pre-wrap;
+}
+#errorOutput ul {
+    color: red;
+    padding-left: 20px;
+}
+#errorOutput ul.success {
+    color: #008000;
+}
+#correctionOutput ul {
+    color: #008080;
+    padding-left: 20px;
+}
+body.dark #correctionOutput ul {
+    color: #00d8d8;
+}
+#autoFixButton {
+    margin-bottom: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+}
+body.dark #autoFixButton {
+    background-color: #333;
+    border-color: #555;
+    color: #fff;
+}
+#dropZone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.2);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+#dropZone.active {
+    display: flex;
+}
+#dropZone p {
+    color: white;
+    font-size: 24px;
+    text-align: center;
+    padding: 20px;
+    border: 2px dashed white;
+    background: rgba(0, 0, 0, 0.7);
+}
+#templateDialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    z-index: 2000;
+    display: none;
+    max-width: 90%;
+    text-align: center;
+}
+body.dark #templateDialog {
+    background: #333;
+    border-color: #555;
+    color: #fff;
+}
+#templateDialog select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+body.dark #templateDialog select {
+    background: #444;
+    color: #fff;
+    border-color: #555;
+}
+#templateDialog button {
+    width: 100px;
+}
+.instructions {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #333;
+}
+body.dark .instructions {
+    color: #ccc;
+}
+.instructions h3 {
+    margin-bottom: 5px;
+}
+.error-line {
+    background-color: rgba(255, 0, 0, 0.2);
+}
+@media (max-width: 600px) {
+    body {
+        margin: 0 10px;
+    }
+    .header-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .header-row h1 {
+        font-size: 20px;
+    }
+    .theme-toggle {
+        margin-left: 0;
+        margin-top: 10px;
+    }
+    button, #autoFixButton {
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+    .button-row-top, .button-row-bottom {
+        gap: 5px;
+    }
+    .left-buttons, .right-buttons {
+        gap: 5px;
+    }
+    #themeSelect {
+        font-size: 14px;
+        padding: 6px;
+    }
+    #dropZone p {
+        font-size: 18px;
+        padding: 15px;
+    }
+    #templateDialog {
+        width: 80%;
+        padding: 15px;
+    }
+    #templateDialog select {
+        font-size: 14px;
+    }
+    .instructions {
+        font-size: 12px;
+    }
+}
+/* --- CodeMirror hints dark theme --- */
+body.dark .CodeMirror-hints {
+    background: #23232b !important;
+    color: #fff !important;
+    border: 1px solid #444 !important;
+}
+body.dark .CodeMirror-hint {
+    color: #fff !important;
+    background: transparent !important;
+}
+body.dark .CodeMirror-hint-active {
+    background: #444 !important;
+    color: #fff !important;
+}
+body.dark .CodeMirror-hints::-webkit-scrollbar {
+    background: #23232b;
+}
+body.dark .CodeMirror-hints::-webkit-scrollbar-thumb {
+    background: #444;
+}
+/* --- Schema strict checkbox and buttons row --- */
+.schema-buttons-row {
+    display: flex;
+    gap: 10px;
+} 

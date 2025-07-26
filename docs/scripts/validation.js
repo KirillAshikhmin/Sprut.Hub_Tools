@@ -328,7 +328,7 @@ window.validateJsonInternal = function(isAutoValidation = false, suppressCorrect
             errorOutput += warnings.map(warn => `<li>Предупреждение: ${warn}</li>`).join('');
         }
         if (errorOutput) {
-            document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
+            document.getElementById('autoFixContainer').innerHTML = `<button id="autoFixButton" class="btn btn-warning" onclick="autoFixJson()">Попробовать исправить автоматически</button>`;
             document.getElementById('errorOutput').innerHTML = `<ul>${errorOutput}</ul>`;
             if (!isAutoValidation && !suppressCorrectionOutput) {
                 document.getElementById('correctionOutput').textContent = '';

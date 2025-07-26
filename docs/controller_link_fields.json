@@ -1,0 +1,24 @@
+{
+  "ModBus": {
+    "search": ["address", "function"],
+    "required": ["address", "function"]
+  },
+  "MQTT": {
+    "search": ["topicGet", "topicSet"],
+    "required": [],
+    "read": "topicGet",
+    "write": "topicSet"
+  },
+  "Xiaomi": {
+    "search": ["getProp", "setProp", "id"],
+    "required": ["id"]
+  },
+  "ZWave": {
+    "search": ["class", "value"],
+    "required": ["class", "value"]
+  },
+  "ZigBee": {
+    "search": ["endpoint", "cluster", "attribute"],
+    "required": ["endpoint", "cluster", "attribute"]
+  }
+} 

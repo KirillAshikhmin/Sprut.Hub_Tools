@@ -5,7 +5,7 @@
 let contextMenu = null;
 let isContextMenuVisible = false;
 
-    // Инициализация контекстного меню
+// Инициализация контекстного меню
 window.initContextMenu = function() {
     contextMenu = document.getElementById('contextMenu');
     
@@ -56,29 +56,53 @@ function setupContextMenuEventListeners() {
 function setupContextMenuHideListeners() {
     // Скрытие по клику вне меню
     document.addEventListener('click', function(e) {
-        if (isContextMenuVisible && !contextMenu.contains(e.target)) {
+        if (contextMenu && contextMenu.style.display !== 'none' && !contextMenu.contains(e.target)) {
             hideContextMenu();
         }
     });
     
     // Скрытие по нажатию Escape
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && isContextMenuVisible) {
-            hideContextMenu();
-        }
-    });
-    
-    // Скрытие при прокрутке
-    document.addEventListener('scroll', function() {
-        if (isContextMenuVisible) {
+        if (e.key === 'Escape' && contextMenu && contextMenu.style.display !== 'none') {
             hideContextMenu();
         }
     });
 }
 
+// Позиционирование контекстного меню
+function positionContextMenu(x, y) {
+    if (!contextMenu) return;
+    
+    const menuRect = contextMenu.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Корректируем позицию, чтобы меню не выходило за границы экрана
+    let adjustedX = x;
+    let adjustedY = y;
+    
+    if (x + menuRect.width > viewportWidth) {
+        adjustedX = viewportWidth - menuRect.width - 10;
+    }
+    
+    if (y + menuRect.height > viewportHeight) {
+        adjustedY = viewportHeight - menuRect.height - 10;
+    }
+    
+    // Убеждаемся, что меню не выходит за левую и верхнюю границы
+    adjustedX = Math.max(10, adjustedX);
+    adjustedY = Math.max(10, adjustedY);
+    
+    contextMenu.style.left = adjustedX + 'px';
+    contextMenu.style.top = adjustedY + 'px';
+}
+
 // Показать контекстное меню
 window.showContextMenu = function(x, y, event) {
-    if (!contextMenu || !window.editor) return;
+    if (!contextMenu || !window.editor) {
+        console.error('showContextMenu: contextMenu или editor не найдены');
+        return;
+    }
     
     // Предотвращаем стандартное контекстное меню браузера
     if (event) {
@@ -86,11 +110,12 @@ window.showContextMenu = function(x, y, event) {
         event.stopPropagation();
     }
     
+    // Показываем меню
+    contextMenu.style.display = 'block';
+    isContextMenuVisible = true;
+    
     // Позиционируем меню
     positionContextMenu(x, y);
-    
-    // Показываем меню
-    isContextMenuVisible = true;
     
     // Фокус на редактор для корректной работы горячих клавиш
     setTimeout(() => {
@@ -106,53 +131,6 @@ function hideContextMenu() {
     isContextMenuVisible = false;
 }
 
-// Позиционирование контекстного меню
-function positionContextMenu(x, y) {
-    if (!contextMenu) return;
-    
-    // Сначала показываем меню, чтобы получить его размеры
-    contextMenu.style.display = 'block';
-    contextMenu.style.visibility = 'hidden';
-    
-    const menuRect = contextMenu.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Корректируем позицию, чтобы меню не выходило за границы экрана
-    let adjustedX = x;
-    let adjustedY = y;
-    
-    // Проверяем правую границу
-    if (x + menuRect.width > viewportWidth) {
-        adjustedX = viewportWidth - menuRect.width - 10;
-    }
-    
-    // Проверяем нижнюю границу
-    if (y + menuRect.height > viewportHeight) {
-        adjustedY = viewportHeight - menuRect.height - 10;
-    }
-    
-    // Проверяем левую границу
-    if (adjustedX < 10) {
-        adjustedX = 10;
-    }
-    
-    // Проверяем верхнюю границу
-    if (adjustedY < 10) {
-        adjustedY = 10;
-    }
-    
-    // Дополнительная проверка для мобильных устройств
-    if (window.innerWidth <= 768) {
-        // На мобильных устройствах центрируем меню по горизонтали
-        adjustedX = Math.max(10, (viewportWidth - menuRect.width) / 2);
-    }
-    
-    contextMenu.style.left = adjustedX + 'px';
-    contextMenu.style.top = adjustedY + 'px';
-    contextMenu.style.visibility = 'visible';
-}
-
 // Выполнение действий контекстного меню
 function executeContextMenuAction(action) {
     if (!window.editor) return;
@@ -166,25 +144,35 @@ function executeContextMenuAction(action) {
             try {
                 const selectedText = window.editor.getSelection();
                 if (selectedText) {
+                    // Копируем выделенный текст
                     navigator.clipboard.writeText(selectedText);
                     window.showToast('Скопировано', 'success');
                 } else {
-                    // Если ничего не выделено, копируем весь текст
+                    // Копируем весь текст
                     navigator.clipboard.writeText(window.editor.getValue());
                     window.showToast('Весь текст скопирован', 'success');
                 }
             } catch (e) {
+                console.error('Ошибка копирования:', e);
                 window.showToast('Ошибка копирования', 'error');
             }
             break;
             
         case 'paste':
-            navigator.clipboard.readText().then(text => {
-                window.editor.replaceSelection(text);
-                window.showToast('Вставлено', 'success');
-            }).catch(e => {
+            try {
+                navigator.clipboard.readText().then(text => {
+                    if (text) {
+                        window.editor.replaceSelection(text);
+                        window.showToast('Вставлено', 'success');
+                    }
+                }).catch(e => {
+                    console.error('Ошибка вставки:', e);
+                    window.showToast('Ошибка вставки', 'error');
+                });
+            } catch (e) {
+                console.error('Ошибка вставки:', e);
                 window.showToast('Ошибка вставки', 'error');
-            });
+            }
             break;
             
         case 'undo':
@@ -203,76 +191,61 @@ function executeContextMenuAction(action) {
             window.editor.execCommand('replace');
             break;
             
-                    case 'addService':
-                if (typeof addService === 'function') {
-                    addService();
-                } else {
-                    console.error('Ошибка контекстного меню: функция addService не найдена');
-                }
-                break;
+        case 'addService':
+            if (typeof addService === 'function') {
+                addService();
+            }
+            break;
             
-                    case 'addCharacteristic':
-                if (typeof addCharacteristic === 'function') {
-                    addCharacteristic();
-                } else {
-                    console.error('Ошибка контекстного меню: функция addCharacteristic не найдена');
-                }
-                break;
+        case 'addCharacteristic':
+            if (typeof addCharacteristic === 'function') {
+                addCharacteristic();
+            }
+            break;
             
-                    case 'addOption':
-                if (typeof addOption === 'function') {
-                    addOption();
-                } else {
-                    console.error('Ошибка контекстного меню: функция addOption не найдена');
-                }
-                break;
+        case 'addOption':
+            if (typeof addOption === 'function') {
+                addOption();
+            }
+            break;
             
-                    case 'addLink':
-                if (typeof addLink === 'function') {
-                    addLink();
-                } else {
-                    console.error('Ошибка контекстного меню: функция addLink не найдена');
-                }
-                break;
+        case 'addLink':
+            if (typeof addLink === 'function') {
+                addLink();
+            }
+            break;
             
-                    case 'fixRequirements':
-                if (typeof correctJson === 'function') {
-                    correctJson();
-                } else {
-                    console.error('Ошибка контекстного меню: функция correctJson не найдена');
-                }
-                break;
+        case 'fixRequirements':
+            if (typeof correctJson === 'function') {
+                correctJson();
+            }
+            break;
             
-                    case 'validate':
-                if (typeof validateJson === 'function') {
-                    validateJson();
-                } else {
-                    console.error('Ошибка контекстного меню: функция validateJson не найдена');
-                }
-                break;
+        case 'validate':
+            if (typeof validateJson === 'function') {
+                validateJson();
+            }
+            break;
             
-                    case 'format':
-                if (typeof formatJson === 'function') {
-                    formatJson();
-                } else {
-                    console.error('Ошибка контекстного меню: функция formatJson не найдена');
-                }
-                break;
-            
-        default:
-            console.error('Ошибка контекстного меню: неизвестное действие:', action);
+        case 'format':
+            if (typeof formatJson === 'function') {
+                formatJson();
+            }
             break;
     }
 }
 
-// Настройка контекстного меню для редактора CodeMirror
+// Настройка контекстного меню для редактора
 window.setupEditorContextMenu = function() {
-    if (!window.editor) return;
+    if (!window.editor) {
+        console.error('setupEditorContextMenu: editor не найден');
+        return;
+    }
     
-    // Обработчик правого клика в редакторе
+    // Обработчик правого клика на редакторе
     window.editor.getWrapperElement().addEventListener('contextmenu', function(e) {
+        
         // Получаем координаты клика
-        const rect = window.editor.getWrapperElement().getBoundingClientRect();
         const x = e.clientX;
         const y = e.clientY;
         
@@ -282,9 +255,6 @@ window.setupEditorContextMenu = function() {
         // Показываем контекстное меню
         window.showContextMenu(x, y, e);
     });
-    
-    // Добавляем поддержку горячих клавиш для контекстного меню
-    setupContextMenuHotkeys();
 };
 
 // Обновление видимости элементов контекстного меню
@@ -293,16 +263,16 @@ function updateContextMenuVisibility() {
     
     const path = window.currentJsonCursorPath || [];
     
-    // Элементы для добавления объектов
-    const addCharItem = contextMenu.querySelector('[data-action="addCharacteristic"]');
-    const addLinkItem = contextMenu.querySelector('[data-action="addLink"]');
-    
     // Кнопка "Добавить характеристику" только если курсор внутри services/N
     let inService = false;
     if (path && path.length >= 2 && path[0].key === 'services' && typeof path[1].key === 'number') {
         inService = true;
     }
-    if (addCharItem) addCharItem.style.display = inService ? '' : 'none';
+    
+    const addCharItem = contextMenu.querySelector('[data-action="addCharacteristic"]');
+    if (addCharItem) {
+        addCharItem.style.display = inService ? '' : 'none';
+    }
     
     // Кнопка "Добавить линк" только если курсор внутри services/N/characteristics/M или options/N
     let inCharacteristic = false, inOption = false;
@@ -312,53 +282,11 @@ function updateContextMenuVisibility() {
     if (path && path.length >= 2 && path[0].key === 'options' && typeof path[1].key === 'number') {
         inOption = true;
     }
-    if (addLinkItem) addLinkItem.style.display = (inCharacteristic || inOption) ? '' : 'none';
-}
-
-// Настройка горячих клавиш для контекстного меню
-function setupContextMenuHotkeys() {
-    document.addEventListener('keydown', function(e) {
-        // Проверяем, что редактор в фокусе
-        if (!window.editor || !window.editor.hasFocus()) return;
-        
-        // Проверяем комбинации клавиш
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key.toLowerCase()) {
-                case 'a':
-                    e.preventDefault();
-                    executeContextMenuAction('selectAll');
-                    break;
-                case 'c':
-                    e.preventDefault();
-                    executeContextMenuAction('copy');
-                    break;
-                case 'v':
-                    e.preventDefault();
-                    executeContextMenuAction('paste');
-                    break;
-                case 'z':
-                    e.preventDefault();
-                    if (e.shiftKey) {
-                        executeContextMenuAction('redo');
-                    } else {
-                        executeContextMenuAction('undo');
-                    }
-                    break;
-                case 'y':
-                    e.preventDefault();
-                    executeContextMenuAction('redo');
-                    break;
-                case 'f':
-                    e.preventDefault();
-                    executeContextMenuAction('find');
-                    break;
-                case 'r':
-                    e.preventDefault();
-                    executeContextMenuAction('replace');
-                    break;
-            }
-        }
-    });
+    
+    const addLinkItem = contextMenu.querySelector('[data-action="addLink"]');
+    if (addLinkItem) {
+        addLinkItem.style.display = (inCharacteristic || inOption) ? '' : 'none';
+    }
 }
 
 // Экспорт функций для глобального использования

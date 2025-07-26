@@ -20,6 +20,12 @@ window.addEventListener('DOMContentLoaded', function () {
             'Cmd-Z': 'undo',
             'Ctrl-Y': 'redo',
             'Cmd-Y': 'redo',
+            'Ctrl-C': 'copy',
+            'Cmd-C': 'copy',
+            'Ctrl-V': 'paste',
+            'Cmd-V': 'paste',
+            'Ctrl-A': 'selectAll',
+            'Cmd-A': 'selectAll',
             'Ctrl-Space': 'autocomplete',
             'Escape': function (cm) {
                 // Закрываем автокомплит

@@ -3,11 +3,18 @@
 
 window.changeTheme = function() {
     const themeToggle = document.getElementById('themeToggle');
-    let currentTheme = localStorage.getItem('theme') || 'light';
+    let currentTheme = localStorage.getItem('theme');
+    
+    // Если тема не была установлена пользователем, определяем текущую по системной теме
+    if (currentTheme === null) {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        currentTheme = prefersDark ? 'dark' : 'light';
+    }
     
     // Переключаем тему между light и dark
     currentTheme = currentTheme === 'light' ? 'dark' : 'light';
     
+    // Сохраняем выбор пользователя
     localStorage.setItem('theme', currentTheme);
     applyTheme(currentTheme);
 };
@@ -44,14 +51,39 @@ window.updateThemeToggleIcon = function(theme) {
 };
 
 window.initTheme = function() {
-    // Инициализируем тему при загрузке
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    applyTheme(savedTheme);
+    // Проверяем, была ли тема уже установлена пользователем
+    const hasUserSetTheme = localStorage.getItem('theme') !== null;
+    
+    let themeToApply;
+    
+    if (hasUserSetTheme) {
+        // Если пользователь уже устанавливал тему, используем сохраненную
+        themeToApply = localStorage.getItem('theme') || 'light';
+    } else {
+        // При первом входе определяем системную тему
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        themeToApply = prefersDark ? 'dark' : 'light';
+        // НЕ сохраняем в localStorage, пока пользователь не переключит вручную
+    }
+    
+    applyTheme(themeToApply);
     
     // Добавляем обработчик клика на переключатель
     const themeToggle = document.getElementById('themeToggle');
     if (themeToggle) {
         themeToggle.addEventListener('click', changeTheme);
+    }
+    
+    // Слушаем изменения системной темы (только если пользователь не устанавливал тему вручную)
+    if (!hasUserSetTheme && window.matchMedia) {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        mediaQuery.addEventListener('change', (e) => {
+            // Проверяем, что пользователь все еще не установил тему вручную
+            if (localStorage.getItem('theme') === null) {
+                const newTheme = e.matches ? 'dark' : 'light';
+                applyTheme(newTheme);
+            }
+        });
     }
 };
 

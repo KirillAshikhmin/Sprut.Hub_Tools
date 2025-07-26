@@ -145,21 +145,38 @@ window.initEditorToolbar = function() {
         addOption();
     });
 
-    // Обработчики новых кнопок
-    document.getElementById('copyBtn').addEventListener('click', async () => {
+    // Обработчики кнопок копирования/вставки
+    document.getElementById('copyBtn').addEventListener('click', () => {
         try {
-            await navigator.clipboard.writeText(window.editor.getValue());
-            window.showToast('Скопировано', 'success');
+            const selectedText = window.editor.getSelection();
+            if (selectedText) {
+                // Копируем выделенный текст
+                navigator.clipboard.writeText(selectedText);
+                window.showToast('Скопировано', 'success');
+            } else {
+                // Копируем весь текст
+                navigator.clipboard.writeText(window.editor.getValue());
+                window.showToast('Весь текст скопирован', 'success');
+            }
         } catch (e) {
+            console.error('Ошибка копирования:', e);
             window.showToast('Ошибка копирования', 'error');
         }
     });
-    document.getElementById('pasteBtn').addEventListener('click', async () => {
+    
+    document.getElementById('pasteBtn').addEventListener('click', () => {
         try {
-            const text = await navigator.clipboard.readText();
-            window.editor.replaceSelection(text);
-            window.showToast('Вставлено', 'success');
+            navigator.clipboard.readText().then(text => {
+                if (text) {
+                    window.editor.replaceSelection(text);
+                    window.showToast('Вставлено', 'success');
+                }
+            }).catch(e => {
+                console.error('Ошибка вставки:', e);
+                window.showToast('Ошибка вставки', 'error');
+            });
         } catch (e) {
+            console.error('Ошибка вставки:', e);
             window.showToast('Ошибка вставки', 'error');
         }
     });

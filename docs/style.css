@@ -296,6 +296,7 @@ body.light .theme-toggle-btn .dark-icon {
     font-family: inherit;
     transition: background 0.2s, color 0.2s;
     display: flex;
+    flex-direction: row;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
@@ -305,6 +306,29 @@ body.light .theme-toggle-btn .dark-icon {
     display: flex;
     align-items: center;
     gap: 5px;
+    flex-wrap: wrap;
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.toolbar-row-1 {
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.toolbar-row-2 {
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.toolbar-row-3 {
+    justify-content: flex-start;
+    align-items: center;
 }
 
 .toolbar-separator {
@@ -332,6 +356,7 @@ body.light .theme-toggle-btn .dark-icon {
     cursor: pointer;
     font-size: 12px;
     transition: all 0.2s;
+    flex-shrink: 0;
 }
 
 .toolbar-btn:hover {
@@ -356,6 +381,7 @@ body.light .theme-toggle-btn .dark-icon {
     font-size: 12px;
     cursor: pointer;
     transition: all 0.2s;
+    flex-shrink: 0;
 }
 
 .toolbar-select:hover {
@@ -946,27 +972,36 @@ body.dark .context-menu-item:hover {
     }
 }
 
-@media (max-width: 480px) {
-    .context-menu {
-        min-width: 220px;
-        max-width: 270px;
-        font-size: 12px;
-    }
-    
-    .context-menu-item {
-        padding: 12px 16px;
-    }
-    
-    .context-menu-item i {
-        font-size: 13px;
-    }
-    
-    .context-menu-shortcut {
-        min-width: 45px;
-    }
+/* Error Line Highlighting */
+.error-line {
+    background-color: rgba(220, 53, 69, 0.1) !important;
+    border-left: 3px solid #dc3545 !important;
+}
+
+body.dark .error-line {
+    background-color: rgba(220, 53, 69, 0.2) !important;
+    border-left: 3px solid #dc3545 !important;
 }
 
 /* Responsive Design */
+@media (max-width: 1024px) {
+    /* Адаптация для планшетов */
+    .editor-toolbar {
+        gap: 6px;
+        padding: 6px;
+    }
+    
+    .toolbar-btn {
+        padding: 7px 11px;
+        font-size: 12px;
+    }
+    
+    .toolbar-select {
+        padding: 7px 11px;
+        font-size: 12px;
+    }
+}
+
 @media (max-width: 768px) {
     .scenario-card {
         margin: 0;
@@ -995,6 +1030,76 @@ body.dark .context-menu-item:hover {
         max-width: 90%;
         width: 90%;
     }
+    
+    /* Мобильная адаптация тулбара */
+    .editor-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 8px;
+    }
+    
+    .toolbar-section {
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+    }
+    
+    .toolbar-group {
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .toolbar-row-1 {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .toolbar-row-2 {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .toolbar-row-3 {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .toolbar-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+        min-width: 44px; /* Минимальная ширина для удобного нажатия */
+    }
+    
+    .toolbar-select {
+        padding: 8px 12px;
+        font-size: 13px;
+        min-width: 120px;
+    }
+    
+    .toolbar-label {
+        font-size: 13px;
+        margin-right: 8px;
+    }
+    
+    .toolbar-separator {
+        display: none; /* Скрываем разделители на мобильных */
+    }
+    
+    /* Скрываем надпись "Добавить:" на мобильных устройствах */
+    .toolbar-row-3 .toolbar-label {
+        display: none;
+    }
+    
+    /* Позволяем cursor-path растягиваться по высоте на мобильных устройствах */
+    .cursor-path {
+        max-height: none;
+        overflow: visible;
+        min-height: auto;
+        padding: 6px 10px;
+        font-size: 12px;
+        line-height: 1.3;
+    }
 }
 
 @media (max-width: 480px) {
@@ -1015,5 +1120,71 @@ body.dark .context-menu-item:hover {
     .instructions-section {
         margin: 20px -20px -20px -20px;
         padding: 15px 20px;
+    }
+    
+    /* Дополнительная адаптация для очень маленьких экранов */
+    .editor-toolbar {
+        padding: 6px;
+        gap: 6px;
+    }
+    
+    .toolbar-section {
+        gap: 0px;
+    }
+    
+    .toolbar-group {
+        gap: 6px;
+    }
+    
+    .toolbar-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+        min-width: 40px;
+    }
+    
+    .toolbar-select {
+        padding: 6px 10px;
+        font-size: 12px;
+        min-width: 100px;
+    }
+    
+    .toolbar-label {
+        font-size: 12px;
+        margin-right: 6px;
+    }
+    
+    /* Группируем кнопки по функциональности */
+    .toolbar-row-1 {
+        justify-content: space-around;
+    }
+    
+    .toolbar-row-2 {
+        justify-content: space-around;
+    }
+    
+    .toolbar-row-3 {
+        justify-content: space-around;
+    }
+    
+    /* На очень маленьких экранах делаем группы более компактными, но оставляем в одну линию */
+    .toolbar-group {
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    /* Скрываем надпись "Добавить:" на очень маленьких экранах */
+    .toolbar-row-3 .toolbar-label {
+        display: none;
+    }
+    
+    /* Позволяем cursor-path растягиваться по высоте на очень маленьких экранах */
+    .cursor-path {
+        max-height: none;
+        overflow: visible;
+        min-height: auto;
+        padding: 6px 10px;
+        font-size: 12px;
+        line-height: 1.3;
     }
 }

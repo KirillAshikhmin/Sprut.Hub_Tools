@@ -213,10 +213,6 @@ window.addEventListener('DOMContentLoaded', function () {
                     inputTypeEnum = data.$defs.characteristic.properties.inputType.enum;
                 }
                 window.allowedInputTypesFromSchema = inputTypeEnum;
-                
-                // Отладочная информация
-                console.log('Загружены типы inputType из схемы:', inputTypeEnum);
-                console.log('Количество типов:', inputTypeEnum.length);
 
                 // Важная диагностическая информация
                 if (!window.schemaHintsTree) {

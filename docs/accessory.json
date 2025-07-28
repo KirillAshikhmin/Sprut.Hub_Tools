@@ -1933,6 +1933,7 @@
           },
           "association": {
             "type": "string",
+            "pattern": "^[0-9]{1}$",
             "description": "for_zigbee"
           },
           "commands": {
@@ -2055,6 +2056,7 @@
                     "AQARA_UNSIGNED_32_BIT_INTEGER",
                     "AQARA_OCTET_STRING",
                     "TUYA_BOOLEAN",
+                    "TUYA_ENUMERATION_8_BIT",
                     "TUYA_32_BIT_INTEGER",
                     "BITMAP_16_BIT"
                   ]

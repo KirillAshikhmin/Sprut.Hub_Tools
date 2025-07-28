@@ -124,12 +124,21 @@ window.validateServiceAndCharacteristics = function(json, errors, warnings, json
 };
 
 window.translateAjvError = function(error, json, jsonStr) {
-    const path = error.dataPath || '';
+    // Используем instancePath (новый стандарт) или dataPath (для обратной совместимости)
+    const path = error.instancePath || error.dataPath || '';
     const message = error.message;
     let translated = '';
     let contextPrefix = '';
     let highlightPath = path;
-    const serviceMatch = path.match(/\.services\[(\d+)\]/);
+    
+    // Преобразуем JSON Pointer в путь для подсветки
+    const jsonPointerToPath = (pointer) => {
+        if (!pointer) return '';
+        return pointer.replace(/\//g, '.').replace(/^\./, '');
+    };
+    
+    const pathForHighlight = jsonPointerToPath(path);
+    const serviceMatch = pathForHighlight.match(/\.services\[(\d+)\]/);
     if (serviceMatch) {
         try {
             const serviceIndex = parseInt(serviceMatch[1], 10);
@@ -139,7 +148,7 @@ window.translateAjvError = function(error, json, jsonStr) {
             } else if (service && service.type) {
                 contextPrefix += `В сервисе типа "${service.type}"`;
             }
-            const charMatch = path.match(/\.characteristics\[(\d+)\]/);
+            const charMatch = pathForHighlight.match(/\.characteristics\[(\d+)\]/);
             if (charMatch) {
                 const charIndex = parseInt(charMatch[1], 10);
                 const characteristic = json.services[serviceIndex].characteristics[charIndex];
@@ -154,7 +163,7 @@ window.translateAjvError = function(error, json, jsonStr) {
             contextPrefix = '';
         }
     }
-    const line = window.highlightErrorLine(path.replace(/^\./, ''), jsonStr);
+    const line = window.highlightErrorLine(pathForHighlight, jsonStr);
     switch (error.keyword) {
         case 'additionalProperties':
             const extraProp = error.params.additionalProperty;
@@ -195,7 +204,9 @@ window.autoFixJson = function(isManual = true) {
         validate(json);
         if (validate.errors) {
             validate.errors.forEach(error => {
-                const path = error.dataPath.split('.').filter(p => p).reduce((obj, key) => {
+                // Используем instancePath (новый стандарт) или dataPath (для обратной совместимости)
+                const errorPath = error.instancePath || error.dataPath || '';
+                const path = errorPath.split('.').filter(p => p).reduce((obj, key) => {
                     if (key.includes('[')) {
                         const [arrayKey, index] = key.split(/\[(\d+)\]/).filter(Boolean);
                         return obj[arrayKey][parseInt(index)];
@@ -203,7 +214,7 @@ window.autoFixJson = function(isManual = true) {
                     return obj[key];
                 }, json);
                 if (error.keyword === 'dependencies' && error.params.missingProperty === 'type') {
-                    const linkPath = error.dataPath.split('.').filter(p => p);
+                    const linkPath = errorPath.split('.').filter(p => p);
                     let link = json;
                     for (let i = 0; i < linkPath.length; i++) {
                         let key = linkPath[i];
@@ -215,7 +226,7 @@ window.autoFixJson = function(isManual = true) {
                         }
                     }
                     link.type = 'unknown';
-                    corrections.push(`Добавлено поле type="unknown" в ${error.dataPath}`);
+                    corrections.push(`Добавлено поле type="unknown" в ${errorPath}`);
                 }
             });
         }
@@ -307,14 +318,18 @@ window.validateJsonInternal = function(isAutoValidation = false, suppressCorrect
                 if (error.keyword !== 'anyOf') {
                     return true;
                 }
-                const path = error.dataPath;
+                const path = error.instancePath || error.dataPath || '';
                 const hasMoreSpecificError = allErrors.some(otherError => {
-                    return otherError !== error && otherError.dataPath.startsWith(path) && otherError.dataPath.length > path.length;
+                    const otherPath = otherError.instancePath || otherError.dataPath || '';
+                    return otherError !== error && otherPath.startsWith(path) && otherPath.length > path.length;
                 });
                 return !hasMoreSpecificError;
             });
             const schemaErrors = filteredErrors
-                    .map(err => window.translateAjvError(err, json, jsonStr))
+                    .map(err => {
+                        const result = window.translateAjvError(err, json, jsonStr);
+                        return result;
+                    })
                     .filter(({ message }) => !/should match/i.test(message))
                     .map(({ message }) => `<li>${message}</li>`)
                     .join('')

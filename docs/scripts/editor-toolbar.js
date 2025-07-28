@@ -55,41 +55,53 @@ window.initEditorToolbar = function() {
     toolbar.className = 'editor-toolbar';
     toolbar.innerHTML = `
         <div class="toolbar-section toolbar-row-1">
-            <button id="copyBtn" class="toolbar-btn" title="Копировать (Ctrl+C)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2"/>
-                  <rect x="3" y="3" width="13" height="13" rx="2"/>
-                </svg>
-            </button>
-            <button id="pasteBtn" class="toolbar-btn" title="Вставить (Ctrl+V)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="4" y="4" width="16" height="16" rx="2"/>
-                  <path d="M8 8h8v8H8z"/>
-                  <line x1="8" y1="12" x2="16" y2="12"/>
-                  <line x1="8" y1="16" x2="16" y2="16"/>
-                </svg>
-            </button>
+            <!-- Группа копирования/вставки -->
+            <div class="toolbar-group">
+                <button id="copyBtn" class="toolbar-btn" title="Копировать (Ctrl+C)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2"/>
+                      <rect x="3" y="3" width="13" height="13" rx="2"/>
+                    </svg>
+                </button>
+                <button id="pasteBtn" class="toolbar-btn" title="Вставить (Ctrl+V)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="4" y="4" width="16" height="16" rx="2"/>
+                      <path d="M8 8h8v8H8z"/>
+                      <line x1="8" y1="12" x2="16" y2="12"/>
+                      <line x1="8" y1="16" x2="16" y2="16"/>
+                    </svg>
+                </button>
+            </div>
+            
             <div class="toolbar-separator"></div>
-            <button id="undoBtn" class="toolbar-btn" title="Отменить (Ctrl+Z)">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 5L3 9L7 13" stroke="var(--cm-foreground)" stroke-width="2"/><path d="M3 9H11C13.2091 9 15 10.7909 15 13" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
-            </button>
-            <button id="redoBtn" class="toolbar-btn" title="Повторить (Ctrl+Y)">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 5L15 9L11 13" stroke="var(--cm-foreground)" stroke-width="2"/><path d="M15 9H7C4.79086 9 3 10.7909 3 13" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
-            </button>
-            <button id="findBtn" class="toolbar-btn" title="Найти (Ctrl+F)">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5" stroke="var(--cm-foreground)" stroke-width="2"/><line x1="13" y1="13" x2="16" y2="16" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
-            </button>
-            <button id="replaceBtn" class="toolbar-btn" title="Заменить (Ctrl+R)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 12A10 10 0 0 1 12 2m0 0v4m0-4h-4"/>
-                    <path d="M22 12A10 10 0 0 1 12 22m0 0v-4m0 4h4"/>
-                </svg>
-            </button>
-            <button id="clearBtn" class="toolbar-btn" title="Очистить">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="4" y="3" width="10" height="12" rx="2" stroke="var(--cm-foreground)" stroke-width="2" fill="none"/><rect x="7" y="2" width="4" height="2" rx="1" stroke="var(--cm-foreground)" stroke-width="2" fill="none"/><line x1="7" y1="6" x2="11" y2="12" stroke="var(--cm-foreground)" stroke-width="1.5"/><line x1="11" y1="6" x2="7" y2="12" stroke="var(--cm-foreground)" stroke-width="1.5"/></svg>
-            </button>
+            
+            <!-- Группа отмены/повтора -->
+            <div class="toolbar-group">
+                <button id="undoBtn" class="toolbar-btn" title="Отменить (Ctrl+Z)">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 5L3 9L7 13" stroke="var(--cm-foreground)" stroke-width="2"/><path d="M3 9H11C13.2091 9 15 10.7909 15 13" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
+                </button>
+                <button id="redoBtn" class="toolbar-btn" title="Повторить (Ctrl+Y)">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 5L15 9L11 13" stroke="var(--cm-foreground)" stroke-width="2"/><path d="M15 9H7C4.79086 9 3 10.7909 3 13" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
+                </button>
+            </div>
+            
+            <div class="toolbar-separator"></div>
+            
+            <!-- Группа поиска/замены -->
+            <div class="toolbar-group">
+                <button id="findBtn" class="toolbar-btn" title="Найти (Ctrl+F)">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5" stroke="var(--cm-foreground)" stroke-width="2"/><line x1="13" y1="13" x2="16" y2="16" stroke="var(--cm-foreground)" stroke-width="2"/></svg>
+                </button>
+                <button id="replaceBtn" class="toolbar-btn" title="Заменить (Ctrl+R)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cm-foreground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 12A10 10 0 0 1 12 2m0 0v4m0-4h-4"/>
+                        <path d="M22 12A10 10 0 0 1 12 22m0 0v-4m0 4h4"/>
+                    </svg>
+                </button>
+            </div>
         </div>
-        <div class="toolbar-section toolbar-row-2" style="margin-top: 8px;">
+        <div class="toolbar-section toolbar-row-2">
+            <!-- Контроллер -->
             <label for="controllerSelect" class="toolbar-label">Контроллер:</label>
             <select id="controllerSelect" class="toolbar-select">
                 <option value="" selected disabled hidden>не выбрано</option>
@@ -99,7 +111,10 @@ window.initEditorToolbar = function() {
                 <option value="Xiaomi">Xiaomi</option>
                 <option value="ZWave">ZWave</option>
             </select>
-            <span class="toolbar-label" style="margin-left:16px;">Добавить:</span>
+        </div>
+        <div class="toolbar-section toolbar-row-3">
+            <!-- Добавление элементов -->
+            <span class="toolbar-label">Добавить:</span>
             <button id="addServiceBtn" class="toolbar-btn">Сервис</button>
             <button id="addCharacteristicBtn" class="toolbar-btn">Характеристику</button>
             <button id="addOptionBtn" class="toolbar-btn">Опцию</button>
@@ -180,16 +195,7 @@ window.initEditorToolbar = function() {
             window.showToast('Ошибка вставки', 'error');
         }
     });
-    document.getElementById('clearBtn').addEventListener('click', () => {
-        if (confirm('Вы уверены, что хотите очистить содержимое?')) {
-            window.editor.setValue('');
-            // Сбросить контроллер
-            const select = document.getElementById('controllerSelect');
-            if (select) select.value = '';
-            window.showToast('Очищено', 'info');
-        }
-    });
-
+    
     // Восстановить выбранный контроллер из localStorage
     const select = document.getElementById('controllerSelect');
     if (select) {
@@ -580,6 +586,7 @@ window.showInputTypeSelectDialog = function(onSelect) {
     }));
     
     if (inputTypes.length === 0) {
+        console.error('Нет доступных типов опций. availableTypes:', availableTypes);
         window.showToast('Нет доступных типов опций', 'warning');
         return;
     }

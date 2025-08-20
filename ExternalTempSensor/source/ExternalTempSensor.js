@@ -1,9 +1,20 @@
 let servicesList = [];
 
+// Выносим название и описание в переменные для использования в info и options
+let scenarioName = {
+    ru: "Внешний датчик температуры для термоголовок Aqara E1, SONOFF TRVZB, Danfoss 014G2463",
+    en: "External temperature sensor for thermostats Aqara E1, SONOFF TRVZB, Danfoss 014G2463"
+};
+
+let scenarioDescription = {
+    ru: "Сценарий астраивает термоголовку и привязывает к ней внешний датчик температуры. Поддерживает Aqara E1, SONOFF TRVZB, Danfoss 014G2463.\nСценарий автоматически определит тип термоголовки и применит соответствующую логику работы.\n\nВАЖНО: Сначала выберите внешний датчик температуры в настройках, затем активируйте сценарий переключателем 'Активно'.",
+    en: "Scenario configures the thermostat and binds an external temperature sensor to it. Supports Aqara E1, SONOFF TRVZB, Danfoss 014G2463.\nThe scenario will automatically determine the thermostat type and apply the appropriate logic.\n\nIMPORTANT: First select the external temperature sensor in the settings, then activate the scenario with the 'Active' switch."
+};
+
 info = {
-    name: "Внешний датчик температуры для термоголовки Aqara E1",
-    description: "Настраивает термоголовку и привязывает к ней внешний датчик температуры",
-    version: "1.0",
+    name: scenarioName.ru,
+    description: scenarioDescription.ru,
+    version: "2.0",
     author: "@BOOMikru",
     onStart: true,
 
@@ -11,6 +22,13 @@ info = {
     sourceCharacteristics: [HC.CurrentHeatingCoolingState],
 
     options: {
+        desc: {
+            name: {en: "", ru: ""}, 
+            desc: scenarioDescription,
+            type: "String",
+            value: "",
+            formType: "status"
+        },
         sensor: {
             name: {
                 en: "Temperature sensor",
@@ -40,20 +58,42 @@ let debug = false
 
 function trigger(source, value, variables, options, context) {
     try {
+        // Проверяем, запустился ли сценарий при старте хаба
+        let isHubStartup = context && context.toString().indexOf("HUB[OnStart]")>=0;
+        
         let acc = source.getAccessory()
         let modelId = acc.getModelId()
+        let manufacturer = acc.getManufacturer()
 
-        if (modelId != "lumi.airrtc.agl001" && !emulate) {
-            logError("Поддерживаются только термоголовки Aqara E1 (SRTS-A01 ID:lumi.airrtc.agl001)", source)
+        // Проверка поддержки термостатов
+        let isSupported = false
+        let thermostatType = ""
+        
+        if (modelId == "lumi.airrtc.agl001" && manufacturer == "Aqara") {
+            isSupported = true
+            thermostatType = "Aqara E1"
+        } else if (modelId == "TRVZB" && manufacturer == "SONOFF") {
+            isSupported = true
+            thermostatType = "SONOFF TRVZB"
+        } else if (modelId == "eTRV0101" && manufacturer == "Danfoss") {
+            isSupported = true
+            thermostatType = "Danfoss eTRV0101"
+        }
+
+        if (!isSupported && !emulate) {
+            logError(`Поддерживаются только термостаты Aqara E1 (lumi.airrtc.agl001), SONOFF TRVZB, Danfoss 014G2463 (eTRV0101). Текущий: ${manufacturer} ${modelId}`, source, isHubStartup)
             return;
         }
+        
         if (options.sensor === "") {
-            logError("Выберите внешний датчик. Если уже выбрали - активируйте сценарий заново", source)
+            logError("Выберите внешний датчик. Если уже выбрали - активируйте сценарий заново", source, isHubStartup)
             return;
         }
+        
         let externalSwitch = undefined
         let targetTemperature = undefined
 
+        // Поиск сервисов в зависимости от типа термостата
         acc.getServices().forEach(function (service) {
             if (service.getType() == HS.Switch && service.getName() == "Внешний датчик температуры") {
                 externalSwitch = service.getCharacteristic(HC.On)
@@ -65,27 +105,27 @@ function trigger(source, value, variables, options, context) {
         })
 
         if (!externalSwitch && !emulate) {
-            logError("Не обнаружен переключатель [Внешний датчик температуры]", source)
+            logError("Не обнаружен переключатель [Внешний датчик температуры]", source, isHubStartup)
             return
         }
 
         if (!targetTemperature && !emulate) {
-            logError("Не обнаружен сервис [Температура внешнего датчика]", source)
+            logError("Не обнаружен сервис [Температура внешнего датчика]", source, isHubStartup)
             return
         }
 
         if (!emulate) externalSwitch.setValue(true)
-        setValueFromSensor(source, variables, options, targetTemperature)
+        setValueFromSensor(source, variables, options, targetTemperature, isHubStartup)
 
         if (!variables.subscribe || variables.subscribed != true) {
-            showSubscribeMessage(options.sensor)
+            showSubscribeMessage(options.sensor, isHubStartup)
             let subscribe = Hub.subscribeWithCondition("", "", [HS.TemperatureSensor], [HC.CurrentTemperature], function (sensorSource, sensorValue) {
                 let service = sensorSource.getService()
                 let isSelected = service.getUUID() == options.sensor
                 if (isSelected && targetTemperature) {
                     targetTemperature.setValue(sensorValue)
                     if (variables.lastTemp != sensorValue) {
-                        logInfo(`Значение на термоголовку установлено: ${sensorValue}°C`, source, debug)
+                        logInfo(`Значение на термоголовку ${thermostatType} установлено: ${sensorValue}°C`, source, debug)
                         variables.lastUpdateTime = Date.now();
                         variables.lastTemp = sensorValue
                     }
@@ -96,23 +136,24 @@ function trigger(source, value, variables, options, context) {
         }
         if (!variables.midnightTask) {
             variables.midnightTask = Cron.schedule("0 0 0 * * *", function () {
-                setValueFromSensor(source, variables, options, targetTemperature)
+                setValueFromSensor(source, variables, options, targetTemperature, false)
                 logInfo("Полуночное обновление", source, debug)
             });
         }
     } catch (e) {
-        logError(`Ошибка установки внешнего датчки температуры: ${e.toString()}`, source)
+        let isHubStartup = context && context.toString().includes("HUB[OnStart]");
+        logError(`Ошибка установки внешнего датчика температуры: ${e.toString()}`, source, isHubStartup)
     }
 }
 
-function setValueFromSensor(source, variables, options, targetTemperature) {
+function setValueFromSensor(source, variables, options, targetTemperature, isHubStartup) {
     try {
         const cdata = options.sensor.split('.');
         const aid = cdata[0];
         const sid = cdata[1];
         let sensorAccessory = Hub.getAccessory(aid)
         if (!sensorAccessory) {
-            logError(`Не найден внешний датчик для термоголовки. ID: ${options.sensor}`, source)
+            logError(`Не найден внешний датчик для термоголовки. ID: ${options.sensor}`, source, isHubStartup)
             return
         }
         let sensorService = sensorAccessory.getService(sid)
@@ -131,21 +172,21 @@ function setValueFromSensor(source, variables, options, targetTemperature) {
             }
 
         } else {
-            logError(`Не найден внешний датчик для термоголовки. ID: ${options.sensor}`, source)
+            logError(`Не найден внешний датчик для термоголовки. ID: ${options.sensor}`, source, isHubStartup)
             return
         }
 
         const currentTime = Date.now();
         if (variables.lastUpdateTime && (currentTime - variables.lastUpdateTime > oneDayMs)) {
-            logError(`Нет показаний от внешнего датчика (${getDeviceName(sensorService)}) в течении суток или более`, source);
+            logError(`Нет показаний от внешнего датчика (${getDeviceName(sensorService)}) в течении суток или более`, source, isHubStartup);
             return;
         }
     } catch (e) {
-        logError(`Не удалось получить температуру с датчика ${options.sensor}: ${e.toString()}`, source)
+        logError(`Не удалось получить температуру с датчика ${options.sensor}: ${e.toString()}`, source, isHubStartup)
     }
 }
 
-function showSubscribeMessage(sensor) {
+function showSubscribeMessage(sensor, isHubStartup) {
     const cdata = sensor.split('.');
     const aid = cdata[0];
     const sid = cdata[1];
@@ -153,8 +194,11 @@ function showSubscribeMessage(sensor) {
     const service = acc.getService(sid)
     const accName = service.getAccessory().getName()
     const sName = service.getName()
-
-    console.message(`Подключен внешний датчик: ${(accName == sName ? accName : accName + " " + sName)}`)
+    if (isHubStartup) {
+        console.info(`Подключен внешний датчик: ${(accName == sName ? accName : accName + " " + sName)}`)
+    } else {
+        console.message(`Подключен внешний датчик: ${(accName == sName ? accName : accName + " " + sName)}`)
+    }
 }
 
 function getDeviceName(service) {
@@ -172,8 +216,12 @@ function logInfo(text, source, show) {
 function logWarn(text, source) {
     console.warn(getLogText(text, source));
 }
-function logError(text, source) {
-    console.error(getLogText(text, source));
+function logError(text, source, isHubStartup) {
+    if (isHubStartup) {
+        logWarn(text, source)
+    } else {
+        console.error(getLogText(text, source))
+    }
 }
 function getLogText(text, source) {
     return `${text} | ${DEBUG_TITLE} ${getDeviceName(source.getService())}`
@@ -198,7 +246,7 @@ servicesListUnsort.sort(function (a, b) { return a.name.ru.localeCompare(b.name.
 // Сутки
 const oneDayMs = 23 * 59 * 60 * 1000
 // Константа для отладки
-const DEBUG_TITLE = "ВДТ. Термоголовка: ";
+const DEBUG_TITLE = "ВДТ: ";
 
 //Эмуляция работы на виртуальном термостате. Устанавливает текущую температуру
 let emulate = false

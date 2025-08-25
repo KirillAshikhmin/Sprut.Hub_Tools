@@ -14,7 +14,7 @@ let scenarioDescription = {
 info = {
     name: scenarioName.ru,
     description: scenarioDescription.ru,
-    version: "2.0",
+    version: "2.1",
     author: "@BOOMikru",
     onStart: true,
 
@@ -95,9 +95,9 @@ function trigger(source, value, variables, options, context) {
 
         // Поиск сервисов в зависимости от типа термостата
         acc.getServices().forEach(function (service) {
-            if (service.getType() == HS.Switch && service.getName() == "Внешний датчик температуры") {
+            if (service.getType() == HS.Switch) {
                 externalSwitch = service.getCharacteristic(HC.On)
-            } else if (service.getType() == HS.C_TemperatureControl && service.getName() == "Температура внешнего датчика") {
+            } else if (service.getType() == HS.C_TemperatureControl) {
                 targetTemperature = service.getCharacteristic(HC.TargetTemperature)
             } else if (emulate && service.getType() == HS.Thermostat) {
                 targetTemperature = service.getCharacteristic(HC.CurrentTemperature)

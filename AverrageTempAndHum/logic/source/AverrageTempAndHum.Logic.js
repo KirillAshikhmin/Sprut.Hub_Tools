@@ -12,14 +12,14 @@ const CONSTANTS = {
 
 // Выносим название и описание в переменные для использования в info и options
 let scenarioName = {
-    ru: "🌡️💧 Средняя температура и влажность в комнате",
-    en: "🌡️💧 Average temperature and humidity in room"
+    ru: "🌡️💧 Средняя температура и влажность в комнате или доме",
+    en: "🌡️💧 Average temperature and humidity in room or house"
 };
 
 let scenarioDescription = {
     ru: "🌡️💧 Универсальный сценарий для создания виртуального датчика с усредненными показаниями\n\n" +
         "📊 ЧТО ДЕЛАЕТ:\n" +
-        "• Собирает показания со всех датчиков в выбранной комнате, вычисляет среднее значение и устанавливает его на виртуальный датчик\n" +
+        "• Собирает показания со всех датчиков в выбранной комнате или во всем доме, вычисляет среднее значение и устанавливает его на виртуальный датчик\n" +
         "• Автоматически адаптируется к типу датчика (температура/влажность)\n" +
         "• Фильтрует невалидные данные (оффлайн устройства, значение -100 (устройства Aqara с разряжающейся батарейкой))\n\n" +
          "🔧 ПОДДЕРЖИВАЕМЫЕ СЕРВИСЫ:\n" +
@@ -41,7 +41,7 @@ let scenarioDescription = {
         "• Проверка работоспособности датчиков",
      en: "🌡️💧 Universal scenario for creating a virtual sensor with averaged readings\n\n" +
          "📊 WHAT IT DOES:\n" +
-         "• Collects readings from all sensors in the selected room, calculates average value and sets it to the virtual sensor\n" +
+         "• Collects readings from all sensors in the selected room or whole house, calculates average value and sets it to the virtual sensor\n" +
          "• Automatically adapts to sensor type (temperature/humidity)\n" +
          "• Filters invalid data (offline devices, -100 value (Aqara devices with low battery))\n\n" +
          "🔧 SUPPORTED SERVICES:\n" +
@@ -103,10 +103,16 @@ info = {
             formType: "list",
             values: getRoomsList(),
             desc: {
-                ru: "Выберите комнату, из которой будут браться показания датчиков для расчета среднего значения.\n" +
-                    "Комната устройства - используется комната в которой расположено устройство, на котором включена логика.",
-                en: "Select room for averaging readings.\n" +
-                    "Device room - uses room where the device is located, on which the logic is enabled."
+                ru: "Выберите комнату, из которой будут браться показания датчиков для расчета среднего значения.\n\n" +
+                    "📋 Варианты:\n" +
+                    "• 🚪 Комната устройства - используется комната в которой расположено устройство, на котором включена логика\n" +
+                    "• 🏠 Весь дом - собирает показания со всех датчиков во всех комнатах дома\n" +
+                    "• Конкретная комната - выберите любую комнату из списка",
+                en: "Select room for averaging readings.\n\n" +
+                    "📋 Options:\n" +
+                    "• 🚪 Device room - uses room where the device is located, on which the logic is enabled\n" +
+                    "• 🏠 Whole house - collects readings from all sensors in all rooms\n" +
+                    "• Specific room - choose any room from the list"
             }
         },
         precisionThreshold: {
@@ -218,25 +224,31 @@ function trigger(source, value, variables, options, context) {
             variables.currentRoom = currentRoom;
             variables.currentServiceId = source.getService().getUUID();
 
-            // Проверяем существование комнаты
+            // Проверяем существование комнаты или обрабатываем "Весь дом"
             const rooms = Hub.getRooms();
             let targetRoom = null;
 
-            // Ищем комнату по имени
-            for (let i = 0; i < rooms.length; i++) {
-                if (rooms[i].getName() === targetRoomName) {
-                    targetRoom = rooms[i];
-                    break;
+            if (targetRoomName === "__WHOLE_HOUSE__") {
+                // Для "Весь дом" используем специальную логику
+                targetRoom = "__WHOLE_HOUSE__";
+            } else {
+                // Ищем комнату по имени
+                for (let i = 0; i < rooms.length; i++) {
+                    if (rooms[i].getName() === targetRoomName) {
+                        targetRoom = rooms[i];
+                        break;
+                    }
+                }
+
+                if (!targetRoom) {
+                    console.error(`Комната "${targetRoomName}" не найдена!`);
+                    return;
                 }
             }
 
-            if (!targetRoom) {
-                console.error(`Комната "${targetRoomName}" не найдена!`);
-                return;
-            }
-
             if (options.debug) {
-                console.info(`Инициализация усреднения ${getCharacteristicName(characteristicType)} для комнаты: ${targetRoomName}`);
+                const displayName = targetRoomName === "__WHOLE_HOUSE__" ? "Весь дом" : targetRoomName;
+                console.info(`Инициализация усреднения ${getCharacteristicName(characteristicType)} для: ${displayName}`);
             }
 
             // Собираем данные по всем устройствам в комнате
@@ -330,7 +342,15 @@ function isDeviceExcluded(accessoryId, serviceId, excludedDevices) {
 
 function collectDevicesData(room, characteristicType, variables, options, source, onlyNew = false) {
     try {
-        const roomAccessories = room.getAccessories();
+        let roomAccessories = [];
+        
+        // Если room === "__WHOLE_HOUSE__", используем Hub.getAccessories() для получения всех аксессуаров
+        if (room === "__WHOLE_HOUSE__") {
+            roomAccessories = Hub.getAccessories();
+        } else {
+            roomAccessories = room.getAccessories();
+        }
+        
         if (!onlyNew) {
             variables.devicesData = {};
         }
@@ -536,20 +556,22 @@ function calculateAndSetAverage(source, variables, options) {
 
             const charName = getCharacteristicName(variables.characteristicType);
             const deviceList = deviceDetails.map(d => `${d.name} (${d.serviceName}, ${d.accessoryId}): ${d.value.toFixed(2)}`).join(' | ');
+            const displayRoomName = variables.roomName === "__WHOLE_HOUSE__" ? "Весь дом" : variables.roomName;
 
             if (valueChanged) {
                 source.setValue(roundedValue);
                 variables.lastAverageValue = roundedValue;
                 if (options.debug) {
-                    console.info(`УСТАНОВЛЕНА. Средняя ${charName}: ${roundedValue.toFixed(2)} (точное: ${averageValue.toFixed(2)}) в комнате "${variables.roomName}" - вышло из мертвой зоны [${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}] вокруг ${lastValue.toFixed(2)} (из ${validCount} устройств: ${deviceList})`);
+                    console.info(`УСТАНОВЛЕНА. Средняя ${charName}: ${roundedValue.toFixed(2)} (точное: ${averageValue.toFixed(2)}) в "${displayRoomName}" - вышло из мертвой зоны [${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}] вокруг ${lastValue.toFixed(2)} (из ${validCount} устройств: ${deviceList})`);
                 }
             } else {
                 if (options.debug) {
-                    console.info(`ПРОПУСК. Средняя ${charName}: ${roundedValue.toFixed(2)} (точное: ${averageValue.toFixed(2)}) в комнате "${variables.roomName}" - в мертвой зоне [${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}] вокруг ${lastValue.toFixed(2)} (из ${validCount} устройств: ${deviceList})`);
+                    console.info(`ПРОПУСК. Средняя ${charName}: ${roundedValue.toFixed(2)} (точное: ${averageValue.toFixed(2)}) в "${displayRoomName}" - в мертвой зоне [${lowerBound.toFixed(2)}-${upperBound.toFixed(2)}] вокруг ${lastValue.toFixed(2)} (из ${validCount} устройств: ${deviceList})`);
                 }
             }
         } else {
-            console.warn(`Нет валидных данных для расчета средней ${getCharacteristicName(variables.characteristicType)} в комнате "${variables.roomName}"`);
+            const displayRoomName = variables.roomName === "__WHOLE_HOUSE__" ? "Весь дом" : variables.roomName;
+            console.warn(`Нет валидных данных для расчета средней ${getCharacteristicName(variables.characteristicType)} в "${displayRoomName}"`);
         }
     } catch (e) {
         console.error(`Ошибка в calculateAndSetAverage: ${e.message}`);
@@ -605,13 +627,15 @@ function checkSensorsUpdates(variables, options) {
                     return;
                 }
 
-                // Проверяем, что устройство все еще в той же комнате
-                const deviceRoom = accessory.getRoom();
-                if (!deviceRoom || deviceRoom.getName() !== variables.roomName) {
-                    const deviceName = deviceData.deviceName || accessory.getName();
-                    removedDevices.push(`Устройство ${deviceName} (перенесено в другую комнату: ${deviceRoom ? deviceRoom.getName() : 'неизвестно'})`);
-                    delete variables.devicesData[deviceKey];
-                    return;
+                // Проверяем, что устройство все еще в той же комнате (кроме случая "Весь дом")
+                if (variables.roomName !== "__WHOLE_HOUSE__") {
+                    const deviceRoom = accessory.getRoom();
+                    if (!deviceRoom || deviceRoom.getName() !== variables.roomName) {
+                        const deviceName = deviceData.deviceName || accessory.getName();
+                        removedDevices.push(`Устройство ${deviceName} (перенесено в другую комнату: ${deviceRoom ? deviceRoom.getName() : 'неизвестно'})`);
+                        delete variables.devicesData[deviceKey];
+                        return;
+                    }
                 }
 
                 if (timeSinceUpdate < oneDayMs) {
@@ -639,11 +663,15 @@ function checkSensorsUpdates(variables, options) {
 
         // Проверяем, не появились ли новые устройства в комнате
         let currentRoom = null;
-        const rooms = Hub.getRooms();
-        for (let i = 0; i < rooms.length; i++) {
-            if (rooms[i].getName() === variables.roomName) {
-                currentRoom = rooms[i];
-                break;
+        if (variables.roomName === "__WHOLE_HOUSE__") {
+            currentRoom = "__WHOLE_HOUSE__";
+        } else {
+            const rooms = Hub.getRooms();
+            for (let i = 0; i < rooms.length; i++) {
+                if (rooms[i].getName() === variables.roomName) {
+                    currentRoom = rooms[i];
+                    break;
+                }
             }
         }
 
@@ -671,7 +699,8 @@ function checkSensorsUpdates(variables, options) {
 
         if (!hasRecentUpdates) {
             const charName = getCharacteristicName(variables.characteristicType);
-            console.error(`ВНИМАНИЕ: Нет обновлений от датчиков ${charName} в течение суток или более в комнате "${variables.roomName}"`);
+            const displayRoomName = variables.roomName === "__WHOLE_HOUSE__" ? "Весь дом" : variables.roomName;
+            console.error(`ВНИМАНИЕ: Нет обновлений от датчиков ${charName} в течение суток или более в "${displayRoomName}"`);
         }
     } catch (e) {
         console.error(`Ошибка в checkSensorsUpdates: ${e.message}`);
@@ -693,7 +722,8 @@ function validateOptions(options) {
 
 function getRoomsList() {
     let roomsList = [];
-    roomsList.push({ name: { ru: "Комната устройства", en: "Device room" }, value: "" });
+    roomsList.push({ name: { ru: "🚪 Комната устройства", en: "🚪 Device room" }, value: "" });
+    roomsList.push({ name: { ru: "🏠 Весь дом", en: "🏠 Whole house" }, value: "__WHOLE_HOUSE__" });
 
     const rooms = Hub.getRooms();
     rooms.forEach(room => {

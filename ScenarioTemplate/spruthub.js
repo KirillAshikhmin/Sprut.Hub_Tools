@@ -66,7 +66,6 @@ declare var LocalVariables: {};
  */
 declare var global: {};
 
-
 /**
  * Устанавливает повторяющийся таймер с указанным обработчиком и интервалом
  * @param handler Функция-обработчик, вызываемая по интервалу
@@ -170,6 +169,12 @@ interface Hub {
      * @param args Дополнительные аргументы
      */
     subscribeWithCondition(cond: string, value: string, [hs], [hc], handler: Function, ...args): Task;
+
+    /**
+     * Отписывается от обновлений изменения характеристики
+     * @param uuid Идентификатор характеристики
+     */
+    //unsubscribe(uuid: string);
 }
 
 /**
@@ -670,6 +675,11 @@ interface HttpResponse {
      * Возвращает бинарные данные ответа
      */
     getBinary(): [];
+
+    /**
+     * Возвращает историю редиректов
+     */
+    getHistory(): HttpResponse[];
 }
 
 /**
@@ -950,7 +960,7 @@ interface Notify {
 
     /**
      * Устанавливает адресатов уведомления
-     * @param index Индекс адресата
+     * @param index Канал уведомления
      * @param clients Список клиентов для уведомления
      * @returns Текущий объект Notify
      */

@@ -1,14 +1,17 @@
-let batteryTypes = ["AA", "AAA", "CR2032", "CR2450", "CR2025", "CR1632", "CR3032", "CR2477", "AG1", "AG3", "ER14250", "2CR5", "18650", "14500", "16340", "CR-P2", "SR44", "3LR12"];
+// Типы батарей
+let batteryTypes = ["AA", "AAA", "CR2032", "CR2450", "CR2025", "CR1632", "CR3032", "CR2477", "AG1", "AG3", "ER14250", "2CR5", "18650", "14500", "16340", "CR-P2", "SR44", "3LR12", "CR17450"];
+// Типы зарядки
 let chargingTypes = ["USB Type-C", "Micro USB", "Mini USB", "Lightning", "5521 12V", "5525 12V", "5521 9V", "5525 9V", "Солнечная панель", "Проприетарное зарядное устройство"]
 
-const dateRegEx = /(\d{2}-\d{2}-\d{4})/
-let typesList = [];
-let chargingList = [];
+// Заполните ниже параметры уведомлений по умолчанию, для того, что бы не указывать их в параметрах для каждого устройства
+const DEFAULT_NOTIFICATION_CHANNEL = "Telegram_1"; // Канал уведомлений для отправки уведомлений (например, Telegram_1, Web_1), или пустое поле, что бы уведомления отправлялись по всем каналам
+const DEFAULT_NOTIFICATION_CLIENTS = "1"; // Клиенты уведомлений которым будут приходить уведомления (например, 1, 3, 4)
+const DEFAULT_SILENT_NOTIFICATION = false; // Использовать тихое уведомление. true - тихие, false - со звуком
 
 info = {
-    name: "BatteryMonitoring",
+    name: "🔋 Мониторинг батареек",
     description: "Позволяет получать уведомления, когда батарея разрядится. в уведомлении будет вся информация, указанная в параметрах. Обновления: https://t.me/smart_sputnik",
-    version: "1.1",
+    version: "2.0",
     author: "@BOOMikru",
     onStart: true,
 
@@ -24,7 +27,7 @@ info = {
             type: "String",
             value: "",
             formType: "list",
-            values: typesList
+            values: getBatteryTypesList()
         },
         quantity: {
             name: {
@@ -42,7 +45,7 @@ info = {
             type: "String",
             value: "",
             formType: "list",
-            values: chargingList
+            values: getChargingTypesList()
         },
         placement: {
             name: {
@@ -93,12 +96,49 @@ info = {
             type: "Boolean",
             value: true
         },
+        notificationChannel: {
+            name: {
+                en: "Notification channel",
+                ru: "Канал уведомлений"
+            },
+            desc: {
+                en: "Channel identifier for notifications (e.g., Telegram_1, Web_1), or empty field, to send notifications to all channels",
+                ru: "Идентификатор канала уведомлений (например, Telegram_1, Web_1), или пустое поле, что бы уведомления отправлялись по всем каналам"
+            },
+            type: "String",
+            value: DEFAULT_NOTIFICATION_CHANNEL
+        },
+        notificationClients: {
+            name: {
+                en: "Notification clients",
+                ru: "Клиенты уведомлений"
+            },
+            desc: {
+                en: "Client identifiers separated by commas (e.g., 1, 3, 4)",
+                ru: "Идентификаторы клиентов через запятую (например, 1, 3, 4)"
+            },
+            type: "String",
+            value: DEFAULT_NOTIFICATION_CLIENTS
+        },
+        silentNotification: {
+            name: {
+                en: "Silent notification",
+                ru: "Тихое уведомление"
+            },
+            desc: {
+                en: "Send notification without sound",
+                ru: "Отправлять уведомление без звука"
+            },
+            type: "Boolean",
+            value: DEFAULT_SILENT_NOTIFICATION
+        },
     },
     variables: {
         notificationSend: false
     }
 }
 
+const dateRegEx = /(\d{2}-\d{2}-\d{4})/
 function trigger(source, value, variables, options) {
     try {
         if (options.specificThreshold && (options.threshold < 0 || options.threshold > 100)) {
@@ -158,31 +198,23 @@ function trigger(source, value, variables, options) {
 
             if (!variables.notificationSend) {
                 variables.notificationSend = true
-                let text = "❗️ Батарея разряжена! "
-                text += state.name + " в " + state.room + " (ID: " + state.uuid + ") "
-                if (state.placement != "") text += " " + state.placement.trim()
-                text += ". Заряд: " + state.level + "%"
-                if (state.batteryType != "") text += " Тип: " + state.batteryType + " (" + state.quantity + " шт.)"
-                if (state.chargingType != "") text += " Заряжается через: " + state.chargingType + " "
-                if (state.comment != "") text += state.comment.trim()
-                text += "Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", ".")
-
-                Notify.text(text).send()
-
-                if (global.sendToTelegram !== undefined) {
-                    let textArray = ["❗️ *Батарея разряжена!*"]
-                    textArray.push(state.name + " в " + state.room + " (ID: " + state.uuid + ")")
-                    if (state.placement != "") textArray.push(state.placement.trim())
-                    textArray.push("")
-                    textArray.push("Заряд: " + state.level + "%")
-                    if (state.batteryType != "" && state.batteryType != "-") textArray.push("Тип: " + state.batteryType + " (" + state.quantity + " шт.)")
-                    if (state.chargingType != "" && state.chargingType != "-") textArray.push("Заряжается через: " + state.chargingType + " ")
-                    textArray.push("")
-                    if (state.comment != "") textArray.push(state.comment.trim())
-                    textArray.push("Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", "."))
-
-                    global.sendToTelegram(textArray);
+                
+                // Формируем сообщение в зависимости от канала
+                let message = formatNotificationMessage(state, date, options.notificationChannel)
+                
+                // Преобразуем строку клиентов в массив
+                let clientsArray = []
+                if (options.notificationClients && options.notificationClients.trim() !== "") {
+                    clientsArray = options.notificationClients.split(',').map(client => client.trim()).filter(client => client !== "")
                 }
+                
+                // Отправляем уведомление через новую функцию
+                sendNotification(
+                    message,
+                    options.notificationChannel,
+                    clientsArray,
+                    options.silentNotification
+                )
             }
 
             if (options.changeName) service.setName("❗️ " + date)
@@ -194,6 +226,82 @@ function trigger(source, value, variables, options) {
         }
     } catch (e) {
         log.error("Ошибка выполнения задачи: " + e.message);
+    }
+}
+
+/**
+ * Функция для форматирования сообщения в зависимости от канала
+ * @param {Object} state - Объект состояния батареи
+ * @param {String} date - Дата замены/зарядки
+ * @param {String} channel - Канал уведомлений
+ * @returns {String} Отформатированное сообщение
+ */
+function formatNotificationMessage(state, date, channel) {
+    if (channel && channel.startsWith("Telegram")) {
+        // Форматирование для Telegram - сразу строка
+        let text = "❗️ *Батарея разряжена!*\n"
+        text += state.name + " в " + state.room + " (ID: " + state.uuid + ")\n"
+        if (state.placement != "") text += state.placement.trim() + "\n"
+        text += "\n"
+        text += "Заряд: " + state.level + "%\n"
+        if (state.batteryType != "" && state.batteryType != "-") text += "Тип: " + state.batteryType + " (" + state.quantity + " шт.)\n"
+        if (state.chargingType != "" && state.chargingType != "-") text += "Заряжается через: " + state.chargingType + " \n"
+        text += "\n"
+        if (state.comment != "") text += state.comment.trim() + "\n"
+        text += "Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", ".")
+        
+        return text
+    } else {
+        // Форматирование для других каналов
+        let text = "❗️ Батарея разряжена! "
+        text += state.name + " в " + state.room + " (ID: " + state.uuid + ") "
+        if (state.placement != "") text += " " + state.placement.trim()
+        text += ". Заряд: " + state.level + "%"
+        if (state.batteryType != "") text += " Тип: " + state.batteryType + " (" + state.quantity + " шт.)"
+        if (state.chargingType != "") text += " Заряжается через: " + state.chargingType + " "
+        if (state.comment != "") text += state.comment.trim()
+        text += "Дата " + (state.chargingType != "" ? "зарядки" : "замены батареи") + ": " + date.replaceAll("-", ".")
+        
+        return text
+    }
+}
+
+/**
+ * Функция для отправки уведомлений через Notify
+ * @param {String} message - Текст сообщения для отправки
+ * @param {String} channel - Канал уведомлений (например, "Telegram_1", "Web_1")
+ * @param {Array} clients - Массив идентификаторов клиентов
+ * @param {Boolean} silent - Флаг тихого режима
+ */
+function sendNotification(message, channel, clients, silent) {
+    try {
+        // Проверяем, что если заданы клиенты, то должен быть задан канал
+        if (clients && clients.length > 0 && (!channel || channel.trim() === "")) {
+            log.error("BatteryMonitoring: Заданы клиенты, но не указан канал уведомлений")
+            return
+        }
+
+        // Создаем объект уведомления
+        let notify = Notify.text(message)
+            .debugText("BatteryMonitoring")
+
+        // Устанавливаем тихий режим если нужно
+        if (silent) {
+            notify = notify.silent(true)
+        }
+
+        // Если заданы и канал, и клиенты, то настраиваем адресатов
+        if (channel && channel.trim() !== "" && clients && clients.length > 0) {
+            // Применяем клиентов по одному, так как spread operator не поддерживается
+            clients.forEach(function(client) {
+                notify = notify.to(channel, client)
+            })
+        }
+
+        // Отправляем уведомление
+        notify.send()
+    } catch (e) {
+        log.error("BatteryMonitoring: Ошибка отправки уведомления: " + e.message)
     }
 }
 
@@ -219,14 +327,30 @@ function getCurrentDateString() {
     return formattedDate
 }
 
-typesList.push({ name: { ru: "Не выбрано", en: "Not selected" }, value: "" });
-batteryTypes.forEach(function (b) {
-    typesList.push({ name: { ru: b, en: b }, type: "String", value: b });
-})
-typesList.push({ name: { ru: "Другой", en: "Another" }, value: "Другой" });
+/**
+ * Функция для получения списка типов батарей
+ * @returns {Array} Массив объектов с типами батарей для формы
+ */
+function getBatteryTypesList() {
+    let typesList = [];
+    typesList.push({ name: { ru: "Не выбрано", en: "Not selected" }, value: "" });
+    batteryTypes.forEach(function (b) {
+        typesList.push({ name: { ru: b, en: b }, type: "String", value: b });
+    })
+    typesList.push({ name: { ru: "Другой", en: "Another" }, value: "Другой" });
+    return typesList;
+}
 
-chargingList.push({ name: { ru: "Не перезаряжается", en: "Not charging" }, value: "" });
-chargingTypes.forEach(function (b) {
-    chargingList.push({ name: { ru: b, en: b }, type: "String", value: b });
-})
-chargingList.push({ name: { ru: "Другой", en: "Another" }, value: "Другой вариант" });
+/**
+ * Функция для получения списка типов зарядки
+ * @returns {Array} Массив объектов с типами зарядки для формы
+ */
+function getChargingTypesList() {
+    let chargingList = [];
+    chargingList.push({ name: { ru: "Не перезаряжается", en: "Not charging" }, value: "" });
+    chargingTypes.forEach(function (b) {
+        chargingList.push({ name: { ru: b, en: b }, type: "String", value: b });
+    })
+    chargingList.push({ name: { ru: "Другой", en: "Another" }, value: "Другой вариант" });
+    return chargingList;
+}

@@ -1,6 +1,6 @@
 info = {
   name: "Конвертер температуры в цвет",
-  description: "Устанавливает оттенок и нысыщенность у лампы при изменении её цветовой температуры. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
+  description: "Устанавливает оттенок и насыщенность у лампы при изменении её цветовой температуры. Обновления по ссылке https://github.com/KirillAshikhmin/Sprut.Hub_Tools/tree/main/Циркадное%20освещение",
   version: "1.0",
   author: "@BOOMikru",
   onStart: false,

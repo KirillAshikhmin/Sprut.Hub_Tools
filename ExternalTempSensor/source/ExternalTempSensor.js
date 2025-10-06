@@ -7,7 +7,7 @@ let scenarioName = {
 };
 
 let scenarioDescription = {
-    ru: "Сценарий астраивает термоголовку и привязывает к ней внешний датчик температуры. Поддерживает Aqara E1, SONOFF TRVZB, Danfoss 014G2463.\nСценарий автоматически определит тип термоголовки и применит соответствующую логику работы.\n\nВАЖНО: Сначала выберите внешний датчик температуры в настройках, затем активируйте сценарий переключателем 'Активно'.",
+    ru: "Сценарий настраивает термоголовку и привязывает к ней внешний датчик температуры. Поддерживает Aqara E1, SONOFF TRVZB, Danfoss 014G2463.\nСценарий автоматически определит тип термоголовки и применит соответствующую логику работы.\n\nВАЖНО: Сначала выберите внешний датчик температуры в настройках, затем активируйте сценарий переключателем 'Активно'.",
     en: "Scenario configures the thermostat and binds an external temperature sensor to it. Supports Aqara E1, SONOFF TRVZB, Danfoss 014G2463.\nThe scenario will automatically determine the thermostat type and apply the appropriate logic.\n\nIMPORTANT: First select the external temperature sensor in the settings, then activate the scenario with the 'Active' switch."
 };
 

@@ -19,7 +19,7 @@ const DEFAULT_COORDINATES = {
 info = {
   name: scenarioName.ru,
   description: scenarioDescription.ru,
-  version: "1.1",
+  version: "1.2",
   author: "@BOOMikru",
   onStart: true,
   sourceServices: [
@@ -115,6 +115,18 @@ info = {
       maxValue: 1440,
       step: 1
     },
+    useCivilTwilight: {
+      name: {
+        en: "Civil twilight",
+        ru: "Гражданские сумерки"
+      },
+      desc: {
+        en: "If enabled, uses civil twilight times instead of sunrise/sunset. Civil twilight occurs when the sun is 6 degrees below the horizon. During this time, in clear weather, most outdoor activities can be performed, and the horizon line is clearly visible.",
+        ru: "Если включено, используется время гражданских сумерек вместо времени рассвета/заката. Гражданские сумерки наступают, когда солнце находится на 6 градусов ниже горизонта. В это время при ясной погоде можно выполнять большинство работ, а линия горизонта прослеживается достаточно чётко."
+      },
+      type: "Boolean",
+      value: false
+    },
     fixedOnTime: {
       name: {
         en: "Fixed turn on time",
@@ -190,6 +202,7 @@ info = {
 // Константы для расчета времени восхода и заката
 const SUN_CONSTANTS = {
   ZENITH: 90.833,  // Угол зенита для расчета восхода/заката (стандартный)
+  CIVIL_TWILIGHT_ZENITH: 96,  // Угол зенита для расчета гражданских сумерек (90 + 6 градусов)
   MS_PER_MINUTE: 1000 * 60,
   MS_PER_HOUR: 1000 * 60 * 60,
   MINUTES_PER_HOUR: 60,
@@ -259,7 +272,7 @@ function updateDayNightStatus(source, variables, options, needChangeState) {
 
       if (areCoordinatesValid(coordinates.latitude, coordinates.longitude)) {
         // Вычисляем оба времени сразу (один раз для обоих вызовов getTurnTime)
-        sunTimes = calculateSunTimes(now, coordinates.latitude, coordinates.longitude, coordinates.elevation);
+        sunTimes = calculateSunTimes(now, coordinates.latitude, coordinates.longitude, coordinates.elevation, options.useCivilTwilight);
 
         // Если полярный день или полярная ночь, устанавливаем соответствующее состояние
         if (sunTimes.status === "polarDay" || sunTimes.status === "polarNight") {
@@ -399,7 +412,7 @@ function getTurnTime(date, options, isTurnOn, sunTimes) {
     }
   }
 
-  // Иначе используем время восхода/заката с учетом оффсета
+  // Иначе используем время восхода/заката (или гражданских сумерек) с учетом оффсета
   // sunTimes должен быть передан из updateDayNightStatus
   if (!sunTimes) {
     return null;
@@ -599,12 +612,13 @@ function handlePolarDayNight(source, variables, options, polarStatus, needChange
  * @param {number} latitude - широта в градусах
  * @param {number} longitude - долгота в градусах
  * @param {number} elevation - высота над уровнем моря в метрах
+ * @param {boolean} useCivilTwilight - использовать гражданские сумерки вместо восхода/заката
  * @returns {Object} объект с полями:
  *   status: "normal" | "polarDay" | "polarNight"
- *   sunrise: Date | null - время восхода
- *   sunset: Date | null - время заката
+ *   sunrise: Date | null - время восхода/начала гражданских сумерек
+ *   sunset: Date | null - время заката/окончания гражданских сумерек
  */
-function calculateSunTimes(date, latitude, longitude, elevation) {
+function calculateSunTimes(date, latitude, longitude, elevation, useCivilTwilight) {
   try {
     const rad = SUN_CONSTANTS.DEG_TO_RAD;
     const latRad = latitude * rad;
@@ -622,8 +636,11 @@ function calculateSunTimes(date, latitude, longitude, elevation) {
     // Вычисляем рефракцию с учетом высоты над уровнем моря
     const refraction = Math.acos(SUN_CONSTANTS.EARTH_RADIUS_KM / (SUN_CONSTANTS.EARTH_RADIUS_KM + elevation / 1000)) * SUN_CONSTANTS.RAD_TO_DEG;
 
+    // Выбираем угол зенита в зависимости от режима
+    const zenith = useCivilTwilight ? SUN_CONSTANTS.CIVIL_TWILIGHT_ZENITH : SUN_CONSTANTS.ZENITH;
+    
     // Вычисляем часовой угол
-    const zenithRad = SUN_CONSTANTS.ZENITH * rad;
+    const zenithRad = zenith * rad;
     const cosHourAngle = (Math.cos(zenithRad) - Math.sin(latRad) * Math.sin(declination)) /
       (Math.cos(latRad) * Math.cos(declination));
 

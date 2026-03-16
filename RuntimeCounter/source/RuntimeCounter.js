@@ -149,6 +149,7 @@ function stopTimer(variables, paramService) {
     clearInterval(variables.intervalTask);
     variables.intervalTask = undefined;
   }
+  if (!paramService) return;
   const startTimeLongChar = paramService.getCharacteristic(HC.C_Long);
   const startTime = startTimeLongChar.getValue();
   startTimeLongChar.setValue(0);

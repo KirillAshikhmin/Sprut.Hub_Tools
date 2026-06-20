@@ -13,6 +13,7 @@
     "gateAutoSwitch": "",
     "gateAutoSwitchInvert": false,
     "noAutoOffWhenManualOn": false,
+    "noAutoOnAfterManualOff": false,
     "ignoreManualWithin5sAfterSensorOn": true,
     "offDelaySeconds": 30,
     "manualHoldSafetyOffDelayMinutes": 240,
@@ -80,6 +81,21 @@
         {
           "type": "Switch",
           "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "name": "Датчик открытия двери",
+      "room": "Кухня",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "ContactSensor",
+          "characteristics": [{ "type": "ContactSensorState", "value": 0 }]
         }
       ]
     }

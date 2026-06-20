@@ -77,6 +77,7 @@ function baseOptions(overrides) {
     luxSensor: '', maxAmbientLux: 50,
     gateAutoSwitch: '', gateAutoSwitchInvert: false,
     noAutoOffWhenManualOn: false,
+    noAutoOnAfterManualOff: false,
     ignoreManualWithin5sAfterSensorOn: true,
     offDelaySeconds: 30,
     manualHoldSafetyOffDelayMinutes: 240,
@@ -94,6 +95,8 @@ function freshVars() {
     offTimerId: undefined,
     manualHoldSafetyTimerId: undefined,
     lastSensorAutoOnAt: undefined,
+    manualOffLock: false,
+    manualOffLockTimerId: undefined,
   };
 }
 
@@ -743,6 +746,263 @@ describe('README §"Антидребезг кнопки/импульса"', () =
     btn.char(HS.StatelessProgrammableSwitch, HC.ProgrammableSwitchEvent).setValue(0);
 
     expect(lampOn.getValue()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Ручные входы" — Датчик открытия (контакт)
+// "Датчик открытия (контакт): ведёт себя как кнопка — реагирует только на
+//  Открытие (переход в состояние «Открыто»), каждое открытие переключает свет
+//  (toggle). Закрытие игнорируется, удержания нет."
+// ---------------------------------------------------------------------------
+
+describe('README §"Ручные входы" — Датчик открытия (контакт)', () => {
+  it('ContactSensor: Открытие (1) при выключенном свете → включает (toggle)', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const contact = makeContact(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({ manualControl1: contact.getService(HS.ContactSensor).getUUID() });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);
+
+    expect(lampOn.getValue()).toBe(true);
+  });
+
+  it('ContactSensor: Закрытие (0) игнорируется — свет не меняется', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const contact = makeContact(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({ manualControl1: contact.getService(HS.ContactSensor).getUUID() });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // Открытие → вкл
+    expect(lampOn.getValue()).toBe(true);
+
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(0);  // Закрытие → игнор
+    expect(lampOn.getValue()).toBe(true);
+  });
+
+  it('ContactSensor: повторное Открытие → выключает (toggle)', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const contact = makeContact(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({ manualControl1: contact.getService(HS.ContactSensor).getUUID() });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // 1-е Открытие → вкл
+    expect(lampOn.getValue()).toBe(true);
+
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(0);  // Закрытие → игнор
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // 2-е Открытие → выкл
+    expect(lampOn.getValue()).toBe(false);
+  });
+
+  it('ContactSensor: Открытие в окне 5с после авто-включения по датчику — игнорируется', ({ hub, scenario, time }) => {
+    const lamp = makeLamp(hub, 10);
+    const motion = makeMotion(hub, 20);
+    const contact = makeContact(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      manualControl1: contact.getService(HS.ContactSensor).getUUID(),
+      ignoreManualWithin5sAfterSensorOn: true,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    expect(lampOn.getValue()).toBe(true);
+    scenario.run({ source: lampOn, value: true, variables: vars, options });
+
+    time.advance('2s');
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // Открытие в окне
+    expect(lampOn.getValue()).toBe(true);  // контакт не выключил
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Запрет авто-включения после ручного выключения"
+// "Если включена опция Не включать свет, если его отключили вручную, то ручное
+//  выключение света при активных датчиках блокирует повторное авто-включение
+//  по датчикам, пока вся активность не спадёт."
+// ---------------------------------------------------------------------------
+
+describe('README §"Запрет авто-включения после ручного выключения"', () => {
+  it('noAutoOnAfterManualOff=true: ручное (внешнее) выключение при активном датчике блокирует повторное авто-вкл', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const m1 = makeMotion(hub, 21);
+    const m2 = makeMotion(hub, 22);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: m1.getService(HS.MotionSensor).getUUID(),
+      motion2: m2.getService(HS.MotionSensor).getUUID(),
+      noAutoOnAfterManualOff: true,
+      offDelaySeconds: 600,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    m1.char(HS.MotionSensor, HC.MotionDetected).setValue(true);  // авто-вкл
+    expect(lampOn.getValue()).toBe(true);
+
+    externalTriggerLampOn(scenario, lampOn, false, vars, options);  // погасили вручную, m1 ещё активен
+    expect(lampOn.getValue()).toBe(false);
+
+    m2.char(HS.MotionSensor, HC.MotionDetected).setValue(true);  // новое срабатывание датчика
+    expect(lampOn.getValue()).toBe(false);  // авто-вкл заблокировано
+  });
+
+  it('noAutoOnAfterManualOff=true: блокировка снимается только после спада активности И таймаута offDelaySeconds', ({ hub, scenario, time }) => {
+    const lamp = makeLamp(hub, 10);
+    const motion = makeMotion(hub, 20);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      noAutoOnAfterManualOff: true,
+      offDelaySeconds: 30,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    externalTriggerLampOn(scenario, lampOn, false, vars, options);
+    expect(lampOn.getValue()).toBe(false);
+
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(false);  // активность спала → пошёл отсчёт offDelay
+    time.advance('30s');                                              // прошёл таймаут — блокировка снята
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);   // новая активность
+    expect(lampOn.getValue()).toBe(true);  // авто-вкл снова работает
+  });
+
+  it('noAutoOnAfterManualOff=true: возврат активности до таймаута держит блокировку (свет не включается)', ({ hub, scenario, time }) => {
+    const lamp = makeLamp(hub, 10);
+    const motion = makeMotion(hub, 20);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      noAutoOnAfterManualOff: true,
+      offDelaySeconds: 30,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    externalTriggerLampOn(scenario, lampOn, false, vars, options);
+    expect(lampOn.getValue()).toBe(false);
+
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(false);  // отсчёт offDelay пошёл
+    time.advance('29s');                                             // таймаут ещё не вышел
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);   // активность вернулась
+    expect(lampOn.getValue()).toBe(false);  // блокировка держится — свет не включается
+  });
+
+  it('noAutoOnAfterManualOff=true: пока есть присутствие, движение на другом датчике не включает свет', ({ hub, scenario, time }) => {
+    // Сценарий из задачи: присутствие на датчике присутствия сохраняется,
+    // на датчике движения появляется движение — авто-вкл должен оставаться заблокирован.
+    const lamp = makeLamp(hub, 10);
+    const occ = makeOccupancy(hub, 21);
+    const motion = makeMotion(hub, 22);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: occ.getService(HS.OccupancySensor).getUUID(),
+      motion2: motion.getService(HS.MotionSensor).getUUID(),
+      noAutoOnAfterManualOff: true,
+      offDelaySeconds: 30,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    occ.char(HS.OccupancySensor, HC.OccupancyDetected).setValue(1);  // присутствие → свет вкл
+    expect(lampOn.getValue()).toBe(true);
+
+    externalTriggerLampOn(scenario, lampOn, false, vars, options);   // погасили вручную, присутствие осталось
+    expect(lampOn.getValue()).toBe(false);
+
+    // присутствие не сбрасывается, на датчике движения появляется/пропадает движение
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    expect(lampOn.getValue()).toBe(false);
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(false);
+    time.advance('60s');  // присутствие всё ещё активно — таймаут снятия не идёт
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    expect(lampOn.getValue()).toBe(false);  // блокировка держится, пока есть присутствие
+  });
+
+  it('noAutoOnAfterManualOff=true: ручное выключение кнопкой при активном датчике блокирует авто-вкл', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const m1 = makeMotion(hub, 21);
+    const m2 = makeMotion(hub, 22);
+    const btn = makeButton(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: m1.getService(HS.MotionSensor).getUUID(),
+      motion2: m2.getService(HS.MotionSensor).getUUID(),
+      manualControl1: btn.getService(HS.StatelessProgrammableSwitch).getUUID(),
+      noAutoOnAfterManualOff: true,
+      ignoreManualWithin5sAfterSensorOn: false,
+      offDelaySeconds: 600,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    m1.char(HS.MotionSensor, HC.MotionDetected).setValue(true);  // авто-вкл
+    expect(lampOn.getValue()).toBe(true);
+
+    btn.char(HS.StatelessProgrammableSwitch, HC.ProgrammableSwitchEvent).setValue(0);  // кнопка → выкл
+    expect(lampOn.getValue()).toBe(false);
+
+    m2.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    expect(lampOn.getValue()).toBe(false);  // авто-вкл заблокировано
+  });
+
+  it('noAutoOnAfterManualOff=false (по умолчанию): после ручного выключения датчик снова включает свет', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const m1 = makeMotion(hub, 21);
+    const m2 = makeMotion(hub, 22);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: m1.getService(HS.MotionSensor).getUUID(),
+      motion2: m2.getService(HS.MotionSensor).getUUID(),
+      noAutoOnAfterManualOff: false,
+      offDelaySeconds: 600,
+    });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    m1.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    externalTriggerLampOn(scenario, lampOn, false, vars, options);
+    expect(lampOn.getValue()).toBe(false);
+
+    m2.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    expect(lampOn.getValue()).toBe(true);  // блокировки нет — свет включается
+  });
+
+  it('noAutoOnAfterManualOff не действует на ручной Switch (off = рабочее состояние автоматики)', ({ hub, scenario }) => {
+    const lamp = makeLamp(hub, 10);
+    const m1 = makeMotion(hub, 21);
+    const m2 = makeMotion(hub, 22);
+    const sw = makeSwitch(hub, 30, true);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    lampOn.setValueSilent(true);
+    const vars = freshVars();
+    const options = baseOptions({
+      motion1: m1.getService(HS.MotionSensor).getUUID(),
+      motion2: m2.getService(HS.MotionSensor).getUUID(),
+      manualControl1: sw.getService(HS.Switch).getUUID(),
+      noAutoOnAfterManualOff: true,
+      offDelaySeconds: 600,
+    });
+
+    scenario.run({ source: lampOn, value: true, variables: vars, options });
+    m1.char(HS.MotionSensor, HC.MotionDetected).setValue(true);  // активность
+    sw.char(HS.Switch, HC.On).setValue(false);                   // выключатель → off (свет гаснет)
+    expect(lampOn.getValue()).toBe(false);
+
+    m2.char(HS.MotionSensor, HC.MotionDetected).setValue(true);  // датчик
+    expect(lampOn.getValue()).toBe(true);  // автоматика по движению снова работает
   });
 });
 

@@ -7,6 +7,7 @@ import { validateCommand } from "../src/commands/validate.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { migrateCommand } from "../src/commands/migrate.js";
 import { serveCommand } from "../src/commands/serve.js";
+import { publishCommand } from "../src/commands/publish.js";
 
 const main = defineCommand({
   meta: {
@@ -22,6 +23,7 @@ const main = defineCommand({
     watch: watchCommand,
     migrate: migrateCommand,
     serve: serveCommand,
+    publish: publishCommand,
   },
 });
 

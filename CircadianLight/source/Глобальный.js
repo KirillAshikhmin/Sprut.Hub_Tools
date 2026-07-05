@@ -255,27 +255,25 @@ function toArray(items) {
 }
 
 // Функции управления режимами рассвета/заката
-function enableModeFor(service, mode) {
+function enableModeFor(service, mode, keepOn) {
     if (!service || !mode) {
         console.error("enableModeFor: сервис или режим не указан {} {}", service, mode)
         return false
     }
-    
+
     if (!GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG || !GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG[mode]) {
         console.error("enableModeFor: неизвестный режим:", mode)
         return false
     }
-    
-    const modeVar = getModeGlobalVariable(service)
-    const startTimeVar = getModeStartTimeVariable(service)
-    
-    GlobalVariables[modeVar] = mode
-    GlobalVariables[startTimeVar] = Date.now()
-    
+
+    GlobalVariables[getModeGlobalVariable(service)] = mode
+    GlobalVariables[getModeStartTimeVariable(service)] = Date.now()
+    GlobalVariables[getModeKeepOnVariable(service)] = keepOn === true
+
     console.info("Циркадное освещение. Включен режим {} для {}",
         GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG[mode].name, getCircadianLightServiceName(service))
 
-    circadianLightCallbackFire(service, "changeMode", { mode: mode });
+    circadianLightCallbackFire(service, "changeMode", { mode: mode, keepOn: keepOn === true });
     return true;
 }
 
@@ -302,20 +300,23 @@ function getModeStatus(service) {
 
 function getModeProgress(service) {
     const mode = getModeStatus(service)
-    if (!mode || !GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG[mode]) {
+    const cfg = GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG
+    if (!mode || !cfg || !cfg[mode]) { // M8: не падаем, если конфиг не загружен
         return 0
     }
-    
-    const startTimeVar = getModeStartTimeVariable(service)
-    const startTime = GlobalVariables[startTimeVar]
+
+    const startTime = GlobalVariables[getModeStartTimeVariable(service)]
     if (!startTime) {
         return 0
     }
-    
+
+    const durationMin = cfg[mode].duration
+    if (!(durationMin > 0)) { // M6: некорректная длительность → завершено, без деления на 0
+        return 1
+    }
+
     const elapsed = Date.now() - startTime
-    const durationMs = GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG[mode].duration * MINUTES_TO_MS // минуты в миллисекунды
-    
-    return Math.min(elapsed / durationMs, 1.0) // максимум 1.0 (100%)
+    return Math.min(elapsed / (durationMin * MINUTES_TO_MS), 1.0) // максимум 1.0 (100%)
 }
 
 // Функция для более естественной интерполяции (ease-in-out)
@@ -350,24 +351,15 @@ function processMode(hours, minute, preset, temp, bright, serviceUUID) {
     if (!mode) {
         return [temp, bright]
     }
-    
-    const progress = getModeProgress(service)
-    const config = GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG[mode]
-    
-    if (!config) {
+
+    const cfg = GlobalVariables.CIRCADIAN_LIGHT_MODES_CONFIG
+    if (!cfg || !cfg[mode]) {
         return [temp, bright]
     }
-    
-    // Если режим завершен
-    if (progress >= 1.0) {
-        if (config.autoDisable) {
-            disableModeForServices([service])
-        }
-        return [temp, bright]
-    }
-    
-    // Применяем более естественную интерполяцию
-    const easedProgress = easeInOutQuad(progress)
+
+    // Чистая интерполяция, без side-effect (M2). getModeProgress ограничивает progress ∈ [0,1];
+    // при progress=1: рассвет → циркадное значение (плавный стык), закат → держит [400,1] (M1).
+    const easedProgress = easeInOutQuad(getModeProgress(service))
     
     let newTemp = temp
     let newBright = bright
@@ -447,6 +439,37 @@ function getModeGlobalVariable(service) {
 
 function getModeStartTimeVariable(service) {
     return "CircadianLight_Mode_" + service.getUUID() + "_startTime"
+}
+
+function getModeKeepOnVariable(service) {
+    return "CircadianLight_Mode_" + service.getUUID() + "_keepOn"
+}
+
+// Держать ли лампу на финальном значении заката до ручного действия.
+function getModeKeepOn(service) {
+    return GlobalVariables[getModeKeepOnVariable(service)] === true
+}
+
+// Чистая очистка состояния режима (без callback — вызывается финализацией в логическом).
+function clearModeState(service) {
+    GlobalVariables[getModeGlobalVariable(service)] = undefined
+    GlobalVariables[getModeStartTimeVariable(service)] = undefined
+    GlobalVariables[getModeKeepOnVariable(service)] = undefined
+}
+
+// Чистое решение о завершении режима: "none" | "sunrise-complete" | "sunset-off" | "sunset-hold".
+function getModeFinalization(service) {
+    const mode = getModeStatus(service)
+    if (!mode || getModeProgress(service) < 1) {
+        return "none"
+    }
+    if (mode === MODE_SUNRISE) {
+        return "sunrise-complete"
+    }
+    if (mode === MODE_SUNSET) {
+        return getModeKeepOn(service) ? "sunset-hold" : "sunset-off"
+    }
+    return "none"
 }
 
 // Ключ в GlobalVariables для коллбеков циркадного освещения (handlers по UUID сервиса)
@@ -547,8 +570,8 @@ function enableSunriseModeFor(services) {
 
 // Включить режим заката для одной лампы:
 // global.enableSunsetModeFor(Hub.getAccessory(99).getService(HS.Lightbulb))
-function enableSunsetModeFor(services) {
-    toArray(services).forEach(function (service) {   enableModeFor(service, MODE_SUNSET) })
+function enableSunsetModeFor(services, keepOn) {
+    toArray(services).forEach(function (service) { enableModeFor(service, MODE_SUNSET, keepOn) })
 }
 
 // Отключить все режимы для лампы:

@@ -621,3 +621,124 @@ describe('circadianLightCallbackUnregister / circadianLightCallbackBroadcast', (
     expect(actions[0]).toBe('reset');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ревью-фиксы режимов рассвета/заката (спека-ревью M1/M2/M5/M6/M8):
+// processMode ДОЛЖНА быть чистой (без side-effect, без «скачка» в конце заката);
+// решение о завершении — отдельная чистая getModeFinalization.
+// ---------------------------------------------------------------------------
+
+function activateMode(variables, uuid, mode, elapsedMin, keepOn, nowIso) {
+  const now = Date.parse(nowIso);
+  variables.global['CircadianLight_Mode_' + uuid + '_active'] = mode;
+  variables.global['CircadianLight_Mode_' + uuid + '_startTime'] = now - elapsedMin * 60000;
+  variables.global['CircadianLight_Mode_' + uuid + '_keepOn'] = keepOn === true;
+}
+
+describe('processMode — чистая, без скачка (M1/M2)', () => {
+  it('M1: закат при progress≥1 держит финал [400,1], не прыгает на циркадное', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const uuid = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb).getUUID();
+    activateMode(variables, uuid, 'sunset', 40, false, '2024-06-21T12:00:00Z'); // 40>30 → progress 1
+
+    const result = scenario.call('processMode', [12, 0, 0, 50, 100, uuid]);
+
+    expect(result[0]).toBe(400);
+    expect(result[1]).toBe(1);
+  });
+
+  it('рассвет при progress≥1 отдаёт циркадное значение (плавный стык)', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const uuid = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb).getUUID();
+    activateMode(variables, uuid, 'sunrise', 40, false, '2024-06-21T12:00:00Z');
+
+    const result = scenario.call('processMode', [12, 0, 0, 50, 100, uuid]);
+
+    expect(result[0]).toBe(50);
+    expect(result[1]).toBe(100);
+  });
+
+  it('M2: processMode не отключает режим (нет side-effect)', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const uuid = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb).getUUID();
+    activateMode(variables, uuid, 'sunrise', 40, false, '2024-06-21T12:00:00Z');
+
+    scenario.call('processMode', [12, 0, 0, 50, 100, uuid]);
+
+    expect(variables.global['CircadianLight_Mode_' + uuid + '_active']).toBe('sunrise');
+  });
+});
+
+describe('getModeFinalization — чистое решение о завершении (M1/M5)', () => {
+  it('progress<1 → "none"', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    activateMode(variables, service.getUUID(), 'sunrise', 10, false, '2024-06-21T12:00:00Z');
+    expect(scenario.call('getModeFinalization', [service])).toBe('none');
+  });
+
+  it('рассвет завершён → "sunrise-complete"', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    activateMode(variables, service.getUUID(), 'sunrise', 40, false, '2024-06-21T12:00:00Z');
+    expect(scenario.call('getModeFinalization', [service])).toBe('sunrise-complete');
+  });
+
+  it('закат завершён, keepOn=false → "sunset-off"', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    activateMode(variables, service.getUUID(), 'sunset', 40, false, '2024-06-21T12:00:00Z');
+    expect(scenario.call('getModeFinalization', [service])).toBe('sunset-off');
+  });
+
+  it('закат завершён, keepOn=true → "sunset-hold"', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    activateMode(variables, service.getUUID(), 'sunset', 40, true, '2024-06-21T12:00:00Z');
+    expect(scenario.call('getModeFinalization', [service])).toBe('sunset-hold');
+  });
+});
+
+describe('keepOn / clearModeState / гварды (M5/M6/M8)', () => {
+  it('enableSunsetModeFor(service, true) выставляет keepOn=true', ({ hub, scenario, variables }) => {
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    scenario.call('enableSunsetModeFor', [service, true]);
+    expect(variables.global['CircadianLight_Mode_' + service.getUUID() + '_keepOn']).toBe(true);
+  });
+
+  it('enableSunsetModeFor(service) без флага → keepOn=false', ({ hub, scenario, variables }) => {
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    scenario.call('enableSunsetModeFor', [service]);
+    expect(variables.global['CircadianLight_Mode_' + service.getUUID() + '_keepOn']).toBe(false);
+  });
+
+  it('clearModeState очищает active/startTime/keepOn', ({ hub, scenario, variables }) => {
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    scenario.call('enableSunsetModeFor', [service, true]);
+    scenario.call('clearModeState', [service]);
+    const u = service.getUUID();
+    expect(variables.global['CircadianLight_Mode_' + u + '_active']).toBeUndefined();
+    expect(variables.global['CircadianLight_Mode_' + u + '_startTime']).toBeUndefined();
+    expect(variables.global['CircadianLight_Mode_' + u + '_keepOn']).toBeUndefined();
+  });
+
+  it('M6: duration≤0 → getModeProgress возвращает 1 (без деления на 0)', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    const u = service.getUUID();
+    variables.global['CircadianLight_Mode_' + u + '_active'] = 'sunrise';
+    // startTime == now (elapsed 0): при duration=0 текущий код даёт 0/0=NaN; гвард → 1
+    variables.global['CircadianLight_Mode_' + u + '_startTime'] = Date.parse('2024-06-21T12:00:00Z');
+    variables.global.CIRCADIAN_LIGHT_MODES_CONFIG.sunrise.duration = 0;
+    expect(scenario.call('getModeProgress', [service])).toBe(1);
+  });
+
+  it('M8: CIRCADIAN_LIGHT_MODES_CONFIG=undefined → getModeProgress не падает, возвращает 0', ({ hub, scenario, variables }) => {
+    const service = makeColorTempLamp(hub, 1, true, 100, 400).getService(HS.Lightbulb);
+    const u = service.getUUID();
+    variables.global['CircadianLight_Mode_' + u + '_active'] = 'sunrise';
+    variables.global['CircadianLight_Mode_' + u + '_startTime'] = 1;
+    variables.global.CIRCADIAN_LIGHT_MODES_CONFIG = undefined;
+    expect(scenario.call('getModeProgress', [service])).toBe(0);
+  });
+});

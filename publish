@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Алиас для запуска команды публикации из корня репозитория:
+#   ./publish <Сценарий> [--check] [--init] [--no-tests] [--allow-missing-changelog]
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bun "$DIR/ScenarioSimulator/packages/cli/bin/scenario-sim.ts" publish "$@" --root "$DIR"

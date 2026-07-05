@@ -136,6 +136,8 @@ info = {
     },
     // Задача на обновление значения циркады
     cronTask: undefined,
+    // Задача таймера режима рассвета/заката
+    modeTask: undefined,
     // Изменение параметров
     changed: {
       // Яркость изменена вручную
@@ -164,6 +166,8 @@ const LINKED_LAMP_THRESHOLD_MS = 1500;
 const SMOOTH_BRIGHTNESS_INTERVAL_MS = 100;
 const DEBUG_TITLE = "Циркадное освещение. ";
 const CIRCADIAN_CALLBACKS_GV = "CircadianLight_Callbacks";
+// Период таймера режима рассвета/заката (плавные шаги + финализация)
+const MODE_TICK_MS = 30000;
 
 
 function trigger(source, value, variables, options, context) {
@@ -451,7 +455,8 @@ function registerCircadianCallback(source, service, variables, options, isDebug)
       if (isLampOn(service)) {
         setCircadianValue(service, variables, options);
         restartCron(source, variables, options);
-      } else {
+      } else if (global.getModeStatus(service) === "sunrise") {
+        // M3: выключенную лампу включает только рассвет (будильник); закат — нет
         const onChar = service.getCharacteristic(HC.On);
         if (onChar) onChar.setValue(true);
       }
@@ -531,6 +536,57 @@ function restartCron(source, variables, options) {
   debug("==== ЗАПУСК ==== Циркадный режим запущен", source, options.Debug);
   const opts = "Preset: " + options.Preset + ". WhatChange: " + options.WhatChange + ". Behavior: " + options.Behavior + ". SmoothOnTime: " + options.SmoothOnTime + ". RandomSeconds: " + options.RandomSeconds + ". LinkedBehavior: " + options.LinkedBehavior;
   debug("СВОЙСТВА: " + opts, source, options.Debug);
+  startModeTimerIfActive(source, variables, options);
+}
+
+// Таймер режима рассвета/заката: чаще обновляет значение (плавность) и финализирует по завершении.
+// Стартует вместе с циркадой (из restartCron), только если у сервиса активен режим.
+function startModeTimerIfActive(source, variables, options) {
+  stopModeTimer(variables);
+  const service = source.getService();
+  if (!global.getModeStatus(service)) return;
+  variables.modeTask = setInterval(function () {
+    modeTick(source, service, variables, options);
+  }, MODE_TICK_MS);
+}
+
+function stopModeTimer(variables) {
+  if (variables.modeTask) {
+    clearInterval(variables.modeTask);
+    variables.modeTask = undefined;
+  }
+}
+
+// Один тик таймера режима: плавный шаг или финализация (решение — чистая global.getModeFinalization).
+function modeTick(source, service, variables, options) {
+  if (variables.disabled || !isLampOn(service)) {
+    stopModeTimer(variables);
+    return;
+  }
+  const fin = global.getModeFinalization(service);
+  if (fin === "none") {
+    setCircadianValue(service, variables, options); // плавный шаг
+    return;
+  }
+  if (fin === "sunrise-complete") {
+    setCircadianValue(service, variables, options); // == циркадное значение, плавный стык
+    global.clearModeState(service);
+    stopModeTimer(variables);
+    return;
+  }
+  if (fin === "sunset-hold") {
+    setCircadianValue(service, variables, options); // держит финал [400,1]
+    global.clearModeState(service);
+    stop(source, variables, options); // останавливаем циркаду — лампа держит значение до reset/ручного
+    variables.runtime.stopped = true;
+    return;
+  }
+  if (fin === "sunset-off") {
+    global.clearModeState(service);
+    const onChar = service.getCharacteristic(HC.On);
+    if (onChar) onChar.setValue(false); // гасим — On=false обработается триггером
+    stopModeTimer(variables);
+  }
 }
 
 function stop(source, variables, options, dontShowDebug) {
@@ -539,6 +595,7 @@ function stop(source, variables, options, dontShowDebug) {
     variables.cronTask.clear();
     variables.cronTask = undefined;
   }
+  stopModeTimer(variables);
   if (dontShowDebug) return;
   debug("==== ОСТАНОВКА ==== Циркадный режим остановлен", source, options.Debug);
 }

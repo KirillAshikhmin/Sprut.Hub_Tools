@@ -465,3 +465,104 @@ describe('Самоинициализация реестра коллбеков (
     expect(typeof variables.global.CircadianLight_Callbacks.handlers[uuid]).toBe('function');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ревью-фиксы режимов (M1-исполнение / M3 / M4): таймер режима в логическом
+// даёт плавные шаги и финализацию (гасит/держит/сбрасывает). changeMode на
+// выключенной лампе включает её только для рассвета.
+// ---------------------------------------------------------------------------
+
+function activateModeGV(variables, uuid, mode, elapsedMin, keepOn) {
+  variables.global['CircadianLight_Mode_' + uuid + '_active'] = mode;
+  variables.global['CircadianLight_Mode_' + uuid + '_startTime'] = Date.parse('2024-06-21T12:00:00Z') - elapsedMin * 60000;
+  variables.global['CircadianLight_Mode_' + uuid + '_keepOn'] = keepOn === true;
+}
+
+describe('M3: changeMode на выключенной лампе', () => {
+  it('рассвет включает выключенную лампу', ({ hub, scenario, variables }) => {
+    const lamp = makeColorTempLamp(hub, 99, false);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    scenario.run({ source: onChar, value: false, variables: freshVars(), options: defaultOptions(), context: '' });
+    variables.global['CircadianLight_Mode_' + uuid + '_active'] = 'sunrise';
+
+    variables.global.CircadianLight_Callbacks.handlers[uuid]('changeMode', { mode: 'sunrise' });
+
+    expect(onChar.getValue()).toBe(true);
+  });
+
+  it('M3: закат НЕ включает выключенную лампу', ({ hub, scenario, variables }) => {
+    const lamp = makeColorTempLamp(hub, 99, false);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    scenario.run({ source: onChar, value: false, variables: freshVars(), options: defaultOptions(), context: '' });
+    variables.global['CircadianLight_Mode_' + uuid + '_active'] = 'sunset';
+
+    variables.global.CircadianLight_Callbacks.handlers[uuid]('changeMode', { mode: 'sunset' });
+
+    expect(onChar.getValue()).toBe(false);
+  });
+});
+
+describe('Таймер режима: запуск и финализация (M1/M4)', () => {
+  it('таймер режима запускается при включении лампы с активным режимом', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const lamp = makeColorTempLamp(hub, 99, true);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    activateModeGV(variables, uuid, 'sunrise', 10, false); // progress ~0.33
+    const vars = freshVars();
+
+    scenario.run({ source: onChar, value: true, variables: vars, options: defaultOptions(), context: '' });
+
+    expect(vars.modeTask).toBeDefined();
+  });
+
+  it('M1: завершённый закат (keepOn=false) — таймер гасит лампу и чистит режим', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const lamp = makeColorTempLamp(hub, 99, true);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    activateModeGV(variables, uuid, 'sunset', 40, false); // progress 1
+    const vars = freshVars();
+
+    scenario.run({ source: onChar, value: true, variables: vars, options: defaultOptions(), context: '' });
+    time.advance(31000);
+
+    expect(onChar.getValue()).toBe(false);
+    expect(variables.global['CircadianLight_Mode_' + uuid + '_active']).toBeUndefined();
+  });
+
+  it('завершённый закат (keepOn=true) — держит 1%, лампа включена, циркада остановлена, режим очищен', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z');
+    const lamp = makeColorTempLamp(hub, 99, true);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    activateModeGV(variables, uuid, 'sunset', 40, true);
+    const vars = freshVars();
+
+    scenario.run({ source: onChar, value: true, variables: vars, options: defaultOptions(), context: '' });
+    time.advance(31000);
+
+    expect(onChar.getValue()).toBe(true);
+    expect(lamp.char(HS.Lightbulb, HC.Brightness).getValue()).toBe(1);
+    expect(vars.cronTask).toBeUndefined();
+    expect(variables.global['CircadianLight_Mode_' + uuid + '_active']).toBeUndefined();
+  });
+
+  it('завершённый рассвет — циркадная температура, режим очищен, циркада продолжается', ({ hub, scenario, variables, time }) => {
+    time.set('2024-06-21T12:00:00Z'); // полдень → циркада temp=50
+    const lamp = makeColorTempLamp(hub, 99, true);
+    const onChar = lamp.char(HS.Lightbulb, HC.On);
+    const uuid = lamp.getService(HS.Lightbulb).getUUID();
+    activateModeGV(variables, uuid, 'sunrise', 40, false);
+    const vars = freshVars();
+
+    scenario.run({ source: onChar, value: true, variables: vars, options: defaultOptions(), context: '' });
+    time.advance(31000);
+
+    expect(lamp.char(HS.Lightbulb, HC.ColorTemperature).getValue()).toBe(50);
+    expect(variables.global['CircadianLight_Mode_' + uuid + '_active']).toBeUndefined();
+    expect(vars.cronTask).toBeDefined();
+  });
+});

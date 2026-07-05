@@ -1,0 +1,7 @@
+{
+  "archive": "manual.zip",
+  "files": [
+    { "source": "source/Логический.js", "primary": true },
+    { "source": "source/Глоб.js", "json": "Пакет. Глоб.json", "name": "Пакет. Глоб", "archive": true }
+  ]
+}

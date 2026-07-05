@@ -1,0 +1,5 @@
+{
+  "name": "Ok",
+  "scenario": { "globals": [], "logic": ["../source/Ok.js"] },
+  "tests": ["*.test.js"]
+}

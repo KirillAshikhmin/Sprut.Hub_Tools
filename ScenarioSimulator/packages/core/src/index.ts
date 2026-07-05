@@ -29,3 +29,4 @@ export { CHAR_METADATA, type CharSpec } from "./generated/charMetadata.js";
 export { ValueCoercer, CoercionError } from "./metadata/ValueCoercer.js";
 export { migrateScenario } from "./migration/index.js";
 export type { MigrateOptions, MigrateResult } from "./migration/index.js";
+export * from "./publish/index.js";

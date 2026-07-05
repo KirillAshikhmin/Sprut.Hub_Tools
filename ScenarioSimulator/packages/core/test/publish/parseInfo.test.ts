@@ -59,4 +59,9 @@ describe("parseInfo", () => {
     const r = parseInfo(`info = { name: makeName(), description: "d", version: "1.0" }`);
     expect(r.nonLiteralFields).toContain("name");
   });
+  test("циклические ссылки не роняют парсер", () => {
+    const src = `let a = { x: b.y }\nlet b = { y: a.x }\ninfo = { name: a.x, description: "d", version: "1.0" }`;
+    const r = parseInfo(src);
+    expect(r.nonLiteralFields).toContain("name");
+  });
 });

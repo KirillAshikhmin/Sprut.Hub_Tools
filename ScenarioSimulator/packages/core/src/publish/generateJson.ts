@@ -12,7 +12,7 @@ export interface BuildJsonInput {
 /** Собирает объект scenarioTemplate по правилам §5 спеки. */
 export function buildScenarioJson(input: BuildJsonInput): ScenarioTemplateJson {
   const { type, source, info, manifestFile: mf, existingJson: ex, folderName } = input;
-  const isLogic = type === "LOGIC" || type === "TEMPLATE";
+  const isLogic = type === "LOGIC";
 
   const name = isLogic
     ? info.name ?? mf.name ?? ex?.name ?? folderName

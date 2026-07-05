@@ -33,6 +33,19 @@ describe("buildScenarioJson", () => {
     expect(noExisting.name).toBe("Circ");
     expect(noExisting.desc).toBe("");
   });
+
+  test("TEMPLATE: как GLOBAL по метаданным — name из манифеста, без onStart", () => {
+    const tpl = buildScenarioJson({ type: "TEMPLATE", source: "function update(c,v){}", info: {}, manifestFile: { source: "s", name: "Шаблон" }, folderName: "F" });
+    expect(tpl.name).toBe("Шаблон");
+    expect("onStart" in tpl).toBe(false);
+    expect(tpl.type).toBe("TEMPLATE");
+  });
+
+  test("LOGIC: active/sync сохраняются из существующего JSON, если в info их нет", () => {
+    const tpl = buildScenarioJson({ type: "LOGIC", source: "info={}\nfunction trigger(){}", info: { name: "N", description: "d", version: "1.0" }, manifestFile: { source: "s" }, existingJson: { name: "N", desc: "d", active: false, onStart: true, sync: true, data: "old", type: "LOGIC" }, folderName: "F" });
+    expect(tpl.active).toBe(false);
+    expect(tpl.sync).toBe(true);
+  });
 });
 
 describe("serializeScenarioJson", () => {

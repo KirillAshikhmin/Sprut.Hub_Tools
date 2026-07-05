@@ -57,11 +57,14 @@ export async function runPublish(opts: RunPublishOptions): Promise<PublishResult
 
   if (opts.initOnly) {
     let wroteManifest = false;
-    if (manifestDerived && opts.write) {
+    if (!manifestDerived) {
+      issues.push({ severity: "warning", code: "manifest", message: "publish.json уже существует — не перезаписан (удалите его для пересоздания)" });
+    } else if (opts.write) {
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
       wroteManifest = true;
     }
-    return { ok: true, issues, generated, wroteManifest, manifestPath, wrote: false };
+    const ok = !issues.some((i) => i.severity === "error");
+    return { ok, issues, generated, wroteManifest, manifestPath, wrote: false };
   }
 
   const validator = new Validator({ mode: "es5+" });
@@ -71,59 +74,63 @@ export async function runPublish(opts: RunPublishOptions): Promise<PublishResult
 
   // --- Фаза 1: проверки по каждому файлу ---
   for (const mf of manifest.files) {
-    const abs = join(scenarioDir, mf.source);
-    if (!existsSync(abs)) {
-      issues.push({ severity: "error", code: "source-missing", message: `Нет исходника: ${mf.source}`, file: mf.source });
-      continue;
-    }
-    const text = await readFile(abs, "utf-8");
-    const type = mf.type ?? detectScenarioType(text);
+    try {
+      const abs = join(scenarioDir, mf.source);
+      if (!existsSync(abs)) {
+        issues.push({ severity: "error", code: "source-missing", message: `Нет исходника: ${mf.source}`, file: mf.source });
+        continue;
+      }
+      const text = await readFile(abs, "utf-8");
+      const type = mf.type ?? detectScenarioType(text);
 
-    // 2. Синтаксис + неподдерживаемые конструкции
-    const vr = validator.validate(text);
-    for (const it of vr.issues) {
-      issues.push({
-        severity: "error",
-        code: it.nodeType === "ParseError" ? "syntax" : "unsupported",
-        message: it.message,
-        file: mf.source,
-        line: it.line,
-        column: it.column,
-      });
-    }
+      // 2. Синтаксис + неподдерживаемые конструкции
+      const vr = validator.validate(text);
+      for (const it of vr.issues) {
+        issues.push({
+          severity: "error",
+          code: it.nodeType === "ParseError" ? "syntax" : "unsupported",
+          message: it.message,
+          file: mf.source,
+          line: it.line,
+          column: it.column,
+        });
+      }
 
-    // 3. Метаданные info (LOGIC/TEMPLATE)
-    const parsed = parseInfo(text);
-    if (type === "LOGIC" || type === "TEMPLATE") {
-      if (!parsed.present) {
-        issues.push({ severity: "error", code: "info-missing", message: `Нет блока info в ${mf.source}`, file: mf.source });
-      } else {
-        for (const req of ["name", "description", "version"] as const) {
-          if (parsed.fields[req] === undefined) {
-            issues.push({ severity: "error", code: "info-missing", message: `В info нет обязательного поля ${req}`, file: mf.source });
+      // 3. Метаданные info (LOGIC/TEMPLATE)
+      const parsed = parseInfo(text);
+      if (type === "LOGIC") {
+        if (!parsed.present) {
+          issues.push({ severity: "error", code: "info-missing", message: `Нет блока info в ${mf.source}`, file: mf.source });
+        } else {
+          for (const req of ["name", "description", "version"] as const) {
+            if (parsed.fields[req] === undefined) {
+              issues.push({ severity: "error", code: "info-missing", message: `В info нет обязательного поля ${req}`, file: mf.source });
+            }
+          }
+          for (const nl of parsed.nonLiteralFields) {
+            issues.push({ severity: "error", code: "info-nonliteral", message: `Поле info.${nl} должно быть литералом`, file: mf.source });
+          }
+          if (mf.name && parsed.fields.name && mf.name !== parsed.fields.name) {
+            issues.push({ severity: "error", code: "manifest", message: `name в манифесте ("${mf.name}") ≠ info.name ("${parsed.fields.name}") в ${mf.source}`, file: mf.source });
           }
         }
-        for (const nl of parsed.nonLiteralFields) {
-          issues.push({ severity: "error", code: "info-nonliteral", message: `Поле info.${nl} должно быть литералом`, file: mf.source });
-        }
-        if (mf.name && parsed.fields.name && mf.name !== parsed.fields.name) {
-          issues.push({ severity: "error", code: "manifest", message: `name в манифесте ("${mf.name}") ≠ info.name ("${parsed.fields.name}") в ${mf.source}`, file: mf.source });
+        logicInputs.push({ version: parsed.fields.version, primary: mf.primary });
+      }
+
+      const ex = existingJsons.find((j) => basename(j.file) === (mf.json ?? `${folderName}.json`))?.tpl ?? null;
+      const tpl = buildScenarioJson({ type, source: text, info: parsed.fields, manifestFile: mf, existingJson: ex, folderName });
+      const outPath = join(scenarioDir, mf.json ?? `${folderName}.json`);
+      plans.push({ mf, abs, text, type, tpl, outPath });
+
+      // 6. Дрейф версии (только LOGIC/TEMPLATE с версией и существующим JSON)
+      if (type === "LOGIC" && ex && ex.data.trim() !== text.trim()) {
+        const oldV = parseInfo(ex.data).fields.version;
+        if (oldV && oldV === parsed.fields.version) {
+          issues.push({ severity: "warning", code: "version-drift", message: `Код ${mf.source} изменился, но версия осталась ${oldV} — поднимите версию и добавьте запись в changelog`, file: mf.source });
         }
       }
-      logicInputs.push({ version: parsed.fields.version, primary: mf.primary });
-    }
-
-    const ex = existingJsons.find((j) => basename(j.file) === (mf.json ?? `${folderName}.json`))?.tpl ?? null;
-    const tpl = buildScenarioJson({ type, source: text, info: parsed.fields, manifestFile: mf, existingJson: ex, folderName });
-    const outPath = join(scenarioDir, mf.json ?? `${folderName}.json`);
-    plans.push({ mf, abs, text, type, tpl, outPath });
-
-    // 6. Дрейф версии (только LOGIC/TEMPLATE с версией и существующим JSON)
-    if ((type === "LOGIC" || type === "TEMPLATE") && ex && ex.data.trim() !== text.trim()) {
-      const oldV = parseInfo(ex.data).fields.version;
-      if (oldV && oldV === parsed.fields.version) {
-        issues.push({ severity: "warning", code: "version-drift", message: `Код ${mf.source} изменился, но версия осталась ${oldV} — поднимите версию и добавьте запись в changelog`, file: mf.source });
-      }
+    } catch (e) {
+      issues.push({ severity: "error", code: "internal", message: `Ошибка обработки ${mf.source}: ${(e as Error).message}`, file: mf.source });
     }
   }
 

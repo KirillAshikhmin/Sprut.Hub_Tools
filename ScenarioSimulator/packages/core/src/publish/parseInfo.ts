@@ -102,7 +102,8 @@ function findInfoObject(body: AnyNode[]): AnyNode | null {
 }
 
 /** Значение узла как литерал строки/буля, читая «по коду» (см. описание parseInfo). */
-function resolveValue(node: AnyNode | undefined, scope: Scope): string | boolean | typeof NOT_LITERAL {
+function resolveValue(node: AnyNode | undefined, scope: Scope, depth = 0): string | boolean | typeof NOT_LITERAL {
+  if (depth > 20) return NOT_LITERAL;
   if (!node) return NOT_LITERAL;
 
   const direct = literalValue(node);
@@ -113,7 +114,7 @@ function resolveValue(node: AnyNode | undefined, scope: Scope): string | boolean
     let out = "";
     let anyString = false;
     for (const part of flattenPlus(node)) {
-      const v = resolveValue(part, scope);
+      const v = resolveValue(part, scope, depth + 1);
       if (typeof v === "string") { out += v; anyString = true; }
     }
     return anyString ? out : NOT_LITERAL;
@@ -127,7 +128,7 @@ function resolveValue(node: AnyNode | undefined, scope: Scope): string | boolean
   ) {
     const objExpr = scope.objects.get(node.object.name);
     const propVal = objExpr && findProp(objExpr, node.property.name);
-    if (propVal) return resolveValue(propVal, scope);
+    if (propVal) return resolveValue(propVal, scope, depth + 1);
     return NOT_LITERAL;
   }
 
@@ -136,7 +137,7 @@ function resolveValue(node: AnyNode | undefined, scope: Scope): string | boolean
     const objExpr = scope.objects.get(node.name);
     if (objExpr) {
       const ru = findProp(objExpr, "ru");
-      if (ru) return resolveValue(ru, scope);
+      if (ru) return resolveValue(ru, scope, depth + 1);
     }
     const s = scope.strings.get(node.name);
     if (s !== undefined) return s;

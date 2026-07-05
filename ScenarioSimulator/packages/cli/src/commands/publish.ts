@@ -12,7 +12,7 @@ export const publishCommand = defineCommand({
     check: { type: "boolean", description: "Только проверки + diff, без записи", default: false },
     "dry-run": { type: "boolean", description: "Синоним --check", default: false },
     init: { type: "boolean", description: "Только (пере)создать publish.json", default: false },
-    "no-tests": { type: "boolean", description: "Пропустить прогон тестов", default: false },
+    tests: { type: "boolean", description: "Прогонять тесты (--no-tests чтобы пропустить)", default: true },
     "allow-missing-changelog": { type: "boolean", description: "Отсутствие changelog => предупреждение", default: false },
   },
   async run({ args }) {
@@ -24,7 +24,7 @@ export const publishCommand = defineCommand({
       scenarioDir,
       rootDir,
       write,
-      runTests: !args["no-tests"],
+      runTests: args.tests !== false,
       allowMissingChangelog: Boolean(args["allow-missing-changelog"]),
       initOnly: Boolean(args.init),
     });
@@ -61,9 +61,9 @@ function formatReport(r: PublishResult, write: boolean): string {
   }
 
   if (r.ok) {
+    if (r.wroteManifest) lines.push(pc.green(`  создан ${rel(r.manifestPath)}`));
     if (write && r.wrote) {
       lines.push(pc.green(pc.bold("\n✓ Всё ок — файлы записаны.")));
-      if (r.wroteManifest) lines.push(pc.green(`  создан ${rel(r.manifestPath)}`));
     } else {
       lines.push(pc.green(pc.bold("\n✓ Всё ок (проверка без записи).")));
     }

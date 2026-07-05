@@ -7,10 +7,13 @@ const BOOL_FIELDS = new Set(["onStart", "active", "sync"]);
 
 /**
  * Статически извлекает интересующие поля info без исполнения кода сценария.
- * Поддерживает прямые литералы (name: "T") и ссылки вида IDENT.prop, где IDENT —
- * верхнеуровневый объект-литерал (частый DRY-паттерн: описание выносят в
- * переменную и переиспользуют в info и options). Поля, значение которых не
- * удалось свести к литералу, попадают в nonLiteralFields.
+ * Умеет читать значение «по коду»:
+ *  - прямые литералы и шаблоны без подстановок;
+ *  - конкатенацию строк ("текст" + f()) — берёт литеральные части, вызовы пропускает;
+ *  - IDENT.prop — значение поля верхнеуровневого объекта-литерала;
+ *  - bare IDENT на объект {ru,…} — берётся поле ru; или на строковую константу.
+ * DRY-паттерн (описание/имя вынесены в переменную и переиспользуются в info и
+ * options) поэтому читается. Что свести к строке не удалось — в nonLiteralFields.
  */
 export function parseInfo(source: string): ParsedInfo {
   const empty: ParsedInfo = { present: false, fields: {}, nonLiteralFields: [] };
@@ -21,7 +24,7 @@ export function parseInfo(source: string): ParsedInfo {
     return empty;
   }
 
-  const objects = collectTopLevelObjects(ast.body);
+  const scope = collectTopLevel(ast.body);
   const obj = findInfoObject(ast.body);
   if (!obj) return empty;
 
@@ -31,11 +34,8 @@ export function parseInfo(source: string): ParsedInfo {
     if (prop.type !== "Property" || prop.key?.type !== "Identifier") continue;
     const key = prop.key.name as keyof InfoMeta;
     if (!WANTED.includes(key)) continue;
-    const lit = resolveValue(prop.value, objects);
-    if (lit === NOT_LITERAL) {
-      nonLiteralFields.push(key);
-      continue;
-    }
+    const lit = resolveValue(prop.value, scope);
+    if (lit === NOT_LITERAL) { nonLiteralFields.push(key); continue; }
     if (STRING_FIELDS.has(key) && typeof lit === "string") (fields as Record<string, unknown>)[key] = lit;
     else if (BOOL_FIELDS.has(key) && typeof lit === "boolean") (fields as Record<string, unknown>)[key] = lit;
     else nonLiteralFields.push(key);
@@ -48,7 +48,7 @@ type AnyNode = {
   operator?: string;
   name?: string;
   computed?: boolean;
-  left?: { type: string; name?: string };
+  left?: AnyNode;
   right?: AnyNode;
   object?: AnyNode;
   property?: AnyNode;
@@ -62,15 +62,25 @@ type AnyNode = {
 
 const NOT_LITERAL = Symbol("not-literal");
 
-function collectTopLevelObjects(body: AnyNode[]): Map<string, AnyNode> {
-  const map = new Map<string, AnyNode>();
+type Scope = { objects: Map<string, AnyNode>; strings: Map<string, string> };
+
+/** Верхнеуровневые объявления: объекты-литералы и строковые константы. */
+function collectTopLevel(body: AnyNode[]): Scope {
+  const objects = new Map<string, AnyNode>();
+  const strings = new Map<string, string>();
   for (const node of body) {
     if (node.type !== "VariableDeclaration") continue;
     for (const d of node.declarations ?? []) {
-      if (d.id?.name && d.init?.type === "ObjectExpression") map.set(d.id.name, d.init);
+      const name = d.id?.name;
+      if (!name || !d.init) continue;
+      if (d.init.type === "ObjectExpression") objects.set(name, d.init);
+      else {
+        const v = literalValue(d.init);
+        if (typeof v === "string") strings.set(name, v);
+      }
     }
   }
-  return map;
+  return { objects, strings };
 }
 
 function findInfoObject(body: AnyNode[]): AnyNode | null {
@@ -81,9 +91,7 @@ function findInfoObject(body: AnyNode[]): AnyNode | null {
       node.expression.left?.type === "Identifier" &&
       node.expression.left.name === "info" &&
       node.expression.right?.type === "ObjectExpression"
-    ) {
-      return node.expression.right;
-    }
+    ) return node.expression.right;
     if (node.type === "VariableDeclaration") {
       for (const d of node.declarations ?? []) {
         if (d.id?.name === "info" && d.init?.type === "ObjectExpression") return d.init;
@@ -93,35 +101,67 @@ function findInfoObject(body: AnyNode[]): AnyNode | null {
   return null;
 }
 
-/** Значение узла как литерал: прямой литерал, no-sub шаблон, или IDENT.prop на верхнеуровневый объект. */
-function resolveValue(node: AnyNode | undefined, objects: Map<string, AnyNode>): string | boolean | typeof NOT_LITERAL {
+/** Значение узла как литерал строки/буля, читая «по коду» (см. описание parseInfo). */
+function resolveValue(node: AnyNode | undefined, scope: Scope): string | boolean | typeof NOT_LITERAL {
+  if (!node) return NOT_LITERAL;
+
   const direct = literalValue(node);
   if (direct !== NOT_LITERAL) return direct;
-  if (
-    node?.type === "MemberExpression" &&
-    node.computed === false &&
-    node.object?.type === "Identifier" &&
-    node.object.name &&
-    node.property?.type === "Identifier" &&
-    node.property.name
-  ) {
-    const objExpr = objects.get(node.object.name);
-    if (objExpr) {
-      for (const p of objExpr.properties ?? []) {
-        if (p.type === "Property" && p.key?.type === "Identifier" && p.key.name === node.property.name) {
-          return literalValue(p.value);
-        }
-      }
+
+  // Конкатенация строк: склеиваем строковые части, нестроковые (вызовы и т.п.) пропускаем.
+  if (node.type === "BinaryExpression" && node.operator === "+") {
+    let out = "";
+    let anyString = false;
+    for (const part of flattenPlus(node)) {
+      const v = resolveValue(part, scope);
+      if (typeof v === "string") { out += v; anyString = true; }
     }
+    return anyString ? out : NOT_LITERAL;
   }
+
+  // IDENT.prop — поле верхнеуровневого объекта.
+  if (
+    node.type === "MemberExpression" && node.computed === false &&
+    node.object?.type === "Identifier" && node.object.name &&
+    node.property?.type === "Identifier" && node.property.name
+  ) {
+    const objExpr = scope.objects.get(node.object.name);
+    const propVal = objExpr && findProp(objExpr, node.property.name);
+    if (propVal) return resolveValue(propVal, scope);
+    return NOT_LITERAL;
+  }
+
+  // bare IDENT: объект {ru,…} -> поле ru; либо строковая константа.
+  if (node.type === "Identifier" && node.name) {
+    const objExpr = scope.objects.get(node.name);
+    if (objExpr) {
+      const ru = findProp(objExpr, "ru");
+      if (ru) return resolveValue(ru, scope);
+    }
+    const s = scope.strings.get(node.name);
+    if (s !== undefined) return s;
+  }
+
   return NOT_LITERAL;
+}
+
+function flattenPlus(node: AnyNode): AnyNode[] {
+  if (node.type === "BinaryExpression" && node.operator === "+") {
+    return [...flattenPlus(node.left as AnyNode), ...flattenPlus(node.right as AnyNode)];
+  }
+  return [node];
+}
+
+function findProp(objExpr: AnyNode, name: string): AnyNode | undefined {
+  for (const p of objExpr.properties ?? []) {
+    if (p.type === "Property" && p.key?.type === "Identifier" && p.key.name === name) return p.value;
+  }
+  return undefined;
 }
 
 function literalValue(node: AnyNode | undefined): string | boolean | typeof NOT_LITERAL {
   if (!node) return NOT_LITERAL;
-  if (node.type === "Literal" && (typeof node.value === "string" || typeof node.value === "boolean")) {
-    return node.value;
-  }
+  if (node.type === "Literal" && (typeof node.value === "string" || typeof node.value === "boolean")) return node.value;
   if (node.type === "TemplateLiteral" && (node.expressions?.length ?? 0) === 0 && node.quasis?.length === 1) {
     return node.quasis[0]?.value?.cooked ?? NOT_LITERAL;
   }

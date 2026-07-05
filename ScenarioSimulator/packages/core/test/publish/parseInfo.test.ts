@@ -40,4 +40,23 @@ describe("parseInfo", () => {
     const r = parseInfo(`info = { name: "N", description: missing.ru, version: "1.0" }`);
     expect(r.nonLiteralFields).toContain("description");
   });
+
+  test("конкатенация строки с вызовом функции берёт литеральную часть", () => {
+    const src = `let n = { ru: "Датчик " + getList(), en: "Sensor " + getList() }\ninfo = { name: n.ru, description: "d", version: "1.0" }`;
+    const r = parseInfo(src);
+    expect(r.fields.name).toBe("Датчик ");
+    expect(r.nonLiteralFields).not.toContain("name");
+  });
+  test("bare IDENT на объект {ru,en} берёт поле ru", () => {
+    const src = `let n = { ru: "Имя", en: "Name" }\ninfo = { name: n, description: "d", version: "1.0" }`;
+    expect(parseInfo(src).fields.name).toBe("Имя");
+  });
+  test("bare IDENT на строковую константу", () => {
+    const src = `const V = "3.0"\ninfo = { name: "N", description: "d", version: V }`;
+    expect(parseInfo(src).fields.version).toBe("3.0");
+  });
+  test("чистый вызов функции без литеральной части => nonLiteral", () => {
+    const r = parseInfo(`info = { name: makeName(), description: "d", version: "1.0" }`);
+    expect(r.nonLiteralFields).toContain("name");
+  });
 });

@@ -22,4 +22,10 @@ describe("detectScenarioType", () => {
   test("синтаксически битый, но с info=/function trigger => LOGIC (regex-fallback)", () => {
     expect(detectScenarioType(`info = {\nfunction trigger(s){`)).toBe("LOGIC");
   });
+  test("var info = <не-объект> + trigger => GLOBAL (info не метаданные)", () => {
+    expect(detectScenarioType(`var info = buildInfo()\nfunction trigger(s, v) {}`)).toBe("GLOBAL");
+  });
+  test("info-объект без trigger/compute/update => GLOBAL", () => {
+    expect(detectScenarioType(`info = { name: "X" }`)).toBe("GLOBAL");
+  });
 });

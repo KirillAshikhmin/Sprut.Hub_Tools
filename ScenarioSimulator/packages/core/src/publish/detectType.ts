@@ -41,7 +41,7 @@ type AnyNode = {
   type: string;
   id?: { name?: string };
   expression?: { type: string; operator?: string; left?: { type: string; name?: string }; right?: { type: string } };
-  declarations?: { id?: { name?: string } }[];
+  declarations?: { id?: { name?: string }; init?: { type?: string } }[];
 };
 
 function isInfoAssignment(node: AnyNode): boolean {
@@ -56,7 +56,7 @@ function isInfoAssignment(node: AnyNode): boolean {
     return true;
   }
   if (node.type === "VariableDeclaration") {
-    return (node.declarations ?? []).some((d) => d.id?.name === "info");
+    return (node.declarations ?? []).some((d) => d.id?.name === "info" && d.init?.type === "ObjectExpression");
   }
   return false;
 }

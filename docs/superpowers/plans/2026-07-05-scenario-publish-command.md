@@ -213,7 +213,7 @@ type AnyNode = {
   type: string;
   id?: { name?: string };
   expression?: { type: string; operator?: string; left?: { type: string; name?: string }; right?: { type: string } };
-  declarations?: { id?: { name?: string } }[];
+  declarations?: { id?: { name?: string }; init?: { type?: string } }[];
 };
 
 function isInfoAssignment(node: AnyNode): boolean {
@@ -228,7 +228,7 @@ function isInfoAssignment(node: AnyNode): boolean {
     return true;
   }
   if (node.type === "VariableDeclaration") {
-    return (node.declarations ?? []).some((d) => d.id?.name === "info");
+    return (node.declarations ?? []).some((d) => d.id?.name === "info" && d.init?.type === "ObjectExpression");
   }
   return false;
 }
@@ -721,34 +721,50 @@ git commit -m "feat(publish): выбор версии папки и провер
 **Interfaces:**
 - Produces: `createZip(entries: ZipEntry[]): Uint8Array`; `ZipEntry = { name: string; data: Uint8Array | string }`.
 
-- [ ] **Step 1: Падающий тест** — `test/publish/zip.test.ts` (проверяем реальной распаковкой системным `unzip`):
+- [ ] **Step 1: Падающий тест** — `test/publish/zip.test.ts`. ВАЖНО: старый macOS `unzip` 6.00 показывает UTF-8-имена как mojibake (баг ОТОБРАЖЕНИЯ, не архива), поэтому реальную распаковку проверяем на ASCII-именах, а корректность кириллических имён и флага UTF-8 — побайтово, без внешнего инструмента:
 
 ```ts
-import { test, expect } from "bun:test";
+import { test, expect, describe } from "bun:test";
 import { createZip } from "../../src/publish/zip.js";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("создаёт валидный zip, распаковываемый unzip, с UTF-8 именами и без __MACOSX", () => {
-  const zip = createZip([
-    { name: "Глобальный.json", data: '{"a":1}' },
-    { name: "Логический.json", data: '{"b":2}' },
-  ]);
-  const dir = mkdtempSync(join(tmpdir(), "ziptest-"));
-  const zipPath = join(dir, "out.zip");
-  writeFileSync(zipPath, zip);
+describe("createZip", () => {
+  test("реальная распаковка системным unzip (ASCII-имена) даёт исходное содержимое", () => {
+    const zip = createZip([
+      { name: "global.json", data: '{"a":1}' },
+      { name: "logic.json", data: '{"b":2}' },
+    ]);
+    const dir = mkdtempSync(join(tmpdir(), "ziptest-"));
+    const zipPath = join(dir, "out.zip");
+    writeFileSync(zipPath, zip);
 
-  const list = Bun.spawnSync(["unzip", "-l", zipPath]);
-  const listing = list.stdout.toString();
-  expect(list.exitCode).toBe(0);
-  expect(listing).toContain("Глобальный.json");
-  expect(listing).toContain("Логический.json");
-  expect(listing).not.toContain("__MACOSX");
+    const ex = Bun.spawnSync(["unzip", "-o", zipPath, "-d", join(dir, "ex")]);
+    expect(ex.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "ex", "global.json"), "utf-8")).toBe('{"a":1}');
+    expect(readFileSync(join(dir, "ex", "logic.json"), "utf-8")).toBe('{"b":2}');
+  });
 
-  const ex = Bun.spawnSync(["unzip", "-o", zipPath, "-d", join(dir, "ex")]);
-  expect(ex.exitCode).toBe(0);
-  expect(readFileSync(join(dir, "ex", "Глобальный.json"), "utf-8")).toBe('{"a":1}');
+  test("имя в UTF-8 с флагом бита 11, байты имени совпадают, без __MACOSX", () => {
+    const name = "Глобальный.json";
+    const zip = createZip([{ name, data: "{}" }]);
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    expect(dv.getUint32(0, true)).toBe(0x04034b50);
+    expect(dv.getUint16(6, true) & 0x0800).toBe(0x0800);
+    const nameLen = dv.getUint16(26, true);
+    const nameBytes = zip.subarray(30, 30 + nameLen);
+    expect(new TextDecoder().decode(nameBytes)).toBe(name);
+    expect(new TextDecoder("latin1").decode(zip)).not.toContain("__MACOSX");
+  });
+
+  test("EOCD присутствует, число записей верное", () => {
+    const zip = createZip([{ name: "a.json", data: "1" }, { name: "b.json", data: "2" }]);
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    const eocdOff = zip.byteLength - 22;
+    expect(dv.getUint32(eocdOff, true)).toBe(0x06054b50);
+    expect(dv.getUint16(eocdOff + 10, true)).toBe(2);
+  });
 });
 ```
 
@@ -861,7 +877,7 @@ export function createZip(entries: ZipEntry[]): Uint8Array {
 - [ ] **Step 4: Запуск — зелёный**
 
 Run: `cd ScenarioSimulator && bun test packages/core/test/publish/zip.test.ts`
-Expected: PASS (1 тест).
+Expected: PASS (3 теста).
 
 - [ ] **Step 5: Commit**
 
@@ -981,7 +997,7 @@ Expected: FAIL — модуль не найден.
 ```ts
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join, relative } from "node:path";
 import { detectScenarioType } from "./detectType.js";
 import { parseInfo } from "./parseInfo.js";
 import type { ManifestFile, PublishManifest, ScenarioTemplateJson } from "./types.js";

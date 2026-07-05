@@ -1,0 +1,11 @@
+{
+  "scenarioTemplate": {
+    "name": "🔘 Тест коллбеков",
+    "desc": "Эталонный пример канонического контракта коллбеков. handler(action, data), ключ — UUID сервиса.",
+    "active": true,
+    "onStart": true,
+    "sync": false,
+    "data": "/**\n * Эталонный пример: логический сценарий регистрирует handler(action, data).\n * action: \"on\" | \"off\" | \"toggle\" | \"set\" (data.on). Ключ — UUID сервиса.\n */\n\nvar SW_CB_GV = \"SwitchCallbackControl_Callbacks\";\nvar DEBUG = true;\n\ninfo = {\n  name: \"🔘 Тест коллбеков\",\n  description: \"Эталонный пример канонического контракта коллбеков. handler(action, data), ключ — UUID сервиса.\",\n  version: \"1.0\",\n  author: \"@BOOMikru\",\n  onStart: true,\n  sourceServices: [HS.Switch],\n  sourceCharacteristics: [HC.On],\n  options: {},\n  variables: {}\n};\n\nfunction trigger(source, value, variables, options, context) {\n  var service = source.getService();\n  var sid = service.getUUID();\n\n  // Самоинициализация реестра — не зависим от порядка загрузки глобального.\n  var gv = GlobalVariables[SW_CB_GV];\n  if (!gv || !gv.handlers) { gv = GlobalVariables[SW_CB_GV] = { handlers: {} }; }\n\n  gv.handlers[sid] = function (action, data) {\n    var on = service.getCharacteristic(HC.On);\n    var target;\n    if (action === \"on\") target = true;\n    else if (action === \"off\") target = false;\n    else if (action === \"toggle\") target = !on.getValue();\n    else if (action === \"set\") target = !!(data && data.on);\n    else return;\n    if (on.getValue() !== target) on.setValue(target);\n    if (DEBUG) console.info(\"[SwitchCallbackControl] \" + service.getName() + \" ← \" + action + \" ⇒ \" + target);\n  };\n}\n",
+    "type": "LOGIC"
+  }
+}

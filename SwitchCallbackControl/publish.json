@@ -1,0 +1,16 @@
+{
+  "files": [
+    {
+      "source": "source/SwitchCallbackControl.Global.js",
+      "type": "GLOBAL",
+      "json": "SwitchCallbackControl.Global.json",
+      "name": "SwitchCallbackControl. Глобальный"
+    },
+    {
+      "source": "source/SwitchCallbackControl.Logic.js",
+      "type": "LOGIC",
+      "json": "SwitchCallbackControl.Logic.json",
+      "primary": true
+    }
+  ]
+}

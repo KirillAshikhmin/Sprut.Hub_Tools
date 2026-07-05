@@ -1,0 +1,62 @@
+{
+  "name": "Тест коллбеков — три выключателя",
+  "description": "Три обычных выключателя в разных комнатах. Сценарий подписан на Switch.On каждого и регистрирует свой handler в GlobalVariables.SwitchCallbackControl.handlers по UUID сервиса. Для проверки Shared‑режима вызови switchCallbackControlFire(serviceId, state), для Map‑режима — switchCallbackControlFire() или switchCallbackControlUpdateAll().",
+  "options": {},
+  "variables": {},
+  "rooms": [
+    { "name": "Гостиная" },
+    { "name": "Кухня" },
+    { "name": "Спальня" }
+  ],
+  "accessories": [
+    {
+      "id": 100,
+      "name": "Выключатель гостиной",
+      "room": "Гостиная",
+      "target": true,
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "name": "Выключатель гостиной",
+          "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "name": "Выключатель кухни",
+      "room": "Кухня",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "name": "Выключатель кухни",
+          "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": 300,
+      "name": "Выключатель спальни",
+      "room": "Спальня",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "name": "Выключатель спальни",
+          "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    }
+  ]
+}

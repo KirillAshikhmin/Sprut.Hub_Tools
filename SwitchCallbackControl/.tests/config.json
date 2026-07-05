@@ -1,0 +1,15 @@
+{
+  "$schema": "../../ScenarioSimulator/schemas/config.schema.json",
+  "name": "SwitchCallbackControl",
+  "scenario": {
+    "globals": ["../source/SwitchCallbackControl.Global.js"],
+    "logic": ["../source/SwitchCallbackControl.Logic.js"]
+  },
+  "tests": ["*.test.js"],
+  "execution": {
+    "timeoutMs": 5000,
+    "strictMode": "off",
+    "encoding": "utf-8",
+    "isolation": "per-test"
+  }
+}

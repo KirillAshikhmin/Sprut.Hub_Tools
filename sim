@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Запуск CLI ScenarioSimulator из корня репозитория (без cd в подпапку):
+#   ./sim run [Сценарий]          — прогнать тесты
+#   ./sim serve --port 5173       — веб-интерфейс (ScenarioSimulator)
+#   ./sim list                    — список тестов
+#   ./sim validate [Сценарий]     — только AST-проверка ES5+
+#   ./sim publish <Сценарий>      — публикация (короче — ./publish)
+# Корень репозитория движок вычисляет сам относительно своего файла,
+# поэтому --root указывать не нужно.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bun "$DIR/ScenarioSimulator/packages/cli/bin/scenario-sim.ts" "$@"

@@ -29,4 +29,15 @@ describe("parseInfo", () => {
     const r = parseInfo(`function helper(){}`);
     expect(r.present).toBe(false);
   });
+
+  test("резолвит IDENT.prop на верхнеуровневый объект-литерал", () => {
+    const src = `let d = { ru: "русское описание", en: "en" }\ninfo = { name: "N", description: d.ru, version: "1.0" }`;
+    const r = parseInfo(src);
+    expect(r.fields.description).toBe("русское описание");
+    expect(r.nonLiteralFields).not.toContain("description");
+  });
+  test("ссылка на неизвестный объект => nonLiteral", () => {
+    const r = parseInfo(`info = { name: "N", description: missing.ru, version: "1.0" }`);
+    expect(r.nonLiteralFields).toContain("description");
+  });
 });

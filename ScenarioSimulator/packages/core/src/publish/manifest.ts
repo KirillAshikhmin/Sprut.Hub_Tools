@@ -63,9 +63,16 @@ export async function deriveManifest(input: DeriveInput): Promise<PublishManifes
     files.push(mf);
   }
 
-  // primary: логический, чьё имя ближе к имени папки; иначе первый логический.
-  const primary = logicCandidates.find((c) => c.matchesFolder) ?? logicCandidates[0];
-  if (primary) primary.mf.primary = true;
+  // primary ставим только при однозначности: единственный логический ИЛИ совпадение
+  // имени с папкой. При нескольких логических без совпадения primary НЕ ставим —
+  // тогда resolveVersion честно потребует уточнить его, если версии различаются
+  // (иначе можно молча взять не тот файл и провалидировать не ту версию).
+  if (logicCandidates.length === 1) {
+    logicCandidates[0]!.mf.primary = true;
+  } else {
+    const primary = logicCandidates.find((c) => c.matchesFolder);
+    if (primary) primary.mf.primary = true;
+  }
 
   const manifest: PublishManifest = { files };
   if (zipMembers) {

@@ -49,4 +49,14 @@ describe("deriveManifest", () => {
     expect(glob.json).toBe("Пакет. Глоб.json");
     expect(glob.name).toBe("Пакет. Глоб");
   });
+
+  test("несколько LOGIC без совпадения с папкой => primary НЕ ставится", async () => {
+    const m = await deriveManifest({
+      scenarioDir: join(FIX, "multi"),
+      sourceFiles: [join(FIX, "multi/source/A.js"), join(FIX, "multi/source/B.js")],
+      existingJsons: [],
+      folderName: "multi",
+    });
+    expect(m.files.every((f) => !f.primary)).toBe(true);
+  });
 });

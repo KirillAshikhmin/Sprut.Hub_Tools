@@ -497,6 +497,23 @@ function circadianLightCallbackFire(service, action, data) {
     }
 }
 
+// Явная отписка обработчика.
+function circadianLightCallbackUnregister(service) {
+    var gv = circadianLightCallbacksInit();
+    var uuid = (service && typeof service.getUUID === "function") ? service.getUUID() : String(service);
+    delete gv.handlers[uuid];
+}
+
+// Широковещательный вызов всех обработчиков. Возвращает число успешно вызванных.
+function circadianLightCallbackBroadcast(action, data) {
+    var gv = circadianLightCallbacksInit();
+    var n = 0;
+    for (var k in gv.handlers) {
+        if (gv.handlers.hasOwnProperty(k) && circadianLightCallbackFire(k, action, data)) n++;
+    }
+    return n;
+}
+
 // Функции для управления циркадным режимом из своих сценариев (вызывают коллбек)
 function resetCircadianLight(service) {
     circadianLightCallbackFire(service, "reset", {});

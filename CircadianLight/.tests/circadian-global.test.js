@@ -588,3 +588,36 @@ describe('circadianLightCallbackFire — boolean-результат и авто�
     expect(variables.global.CircadianLight_Callbacks.handlers['99999.13']).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Спека §4/§3: явная отписка unregister и широковещательный broadcast.
+// ---------------------------------------------------------------------------
+
+describe('circadianLightCallbackUnregister / circadianLightCallbackBroadcast', () => {
+  it('unregister убирает handler — последующий fire возвращает false', ({ hub, scenario, variables }) => {
+    const lamp = makeColorTempLamp(hub, 1, true, 100, 400);
+    const service = lamp.getService(HS.Lightbulb);
+    variables.global.CircadianLight_Callbacks.handlers[service.getUUID()] = () => {};
+
+    scenario.call('circadianLightCallbackUnregister', [service]);
+
+    expect(variables.global.CircadianLight_Callbacks.handlers[service.getUUID()]).toBeUndefined();
+    expect(scenario.call('circadianLightCallbackFire', [service, 'reset', {}])).toBe(false);
+  });
+
+  it('broadcast вызывает все зарегистрированные handler и возвращает их число', ({ hub, scenario, variables }) => {
+    const l1 = makeColorTempLamp(hub, 1, true, 100, 400);
+    const l2 = makeColorTempLamp(hub, 2, true, 100, 400);
+    const s1 = l1.getService(HS.Lightbulb);
+    const s2 = l2.getService(HS.Lightbulb);
+    const actions = [];
+    variables.global.CircadianLight_Callbacks.handlers[s1.getUUID()] = (a) => actions.push(a);
+    variables.global.CircadianLight_Callbacks.handlers[s2.getUUID()] = (a) => actions.push(a);
+
+    const n = scenario.call('circadianLightCallbackBroadcast', ['reset', {}]);
+
+    expect(n).toBe(2);
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).toBe('reset');
+  });
+});

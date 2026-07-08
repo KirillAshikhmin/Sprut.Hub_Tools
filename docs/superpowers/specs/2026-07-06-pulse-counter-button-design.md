@@ -102,8 +102,7 @@ setupSubscription(source, variables, options);         // идемпотентн
 
 ```
 if (variables.subscribed) return;
-eventChar = anchorSource.getService().getCharacteristic(HC.ProgrammableSwitchEvent);
-if (!eventChar) { console.warn("...нет характеристики кнопки..."); return; }
+eventChar = anchorSource;   // source триггера и есть ProgrammableSwitchEvent кнопки
 
 initPrev(variables, options);                          // §5.3 — до подписки
 variables.subscription = Hub.subscribeWithCondition(
@@ -183,11 +182,10 @@ hasMultipleLogicInChain(str, elements):  // один и тот же LOGIC-пре
 | Счётчик впервые виден в колбэке (`prev` пуст)     | запоминаем значение, события нет                                     |
 | Счётчик не выбран / чужой сервис                  | тихий `return` (при `debug` — лог)                                   |
 | Один счётчик на 2+ типа                           | ошибка конфигурации: `console.error` + `return`, подписки нет (§7)   |
-| На аксессуаре нет `ProgrammableSwitchEvent`       | `console.warn`, подписки нет, без исключения                        |
 
 ## 9. Тесты (`.tests/pulse-counter-button.test.js`)
 
-Тесты — **от этой спецификации**. Модель прогона: `scenario.run({source: <характеристика кнопки>, value, variables, options, context})` оформляет подписку; затем `setValue` на характеристике счётчика доезжает до колбэка через `HubMock`/`SubscriptionManager`; проверяется `ProgrammableSwitchEvent` кнопки. Начальное значение кнопки — `null` (отличать «событие не отправлено» от кода `0`). UUID конкретного счётчика из нескольких однотипных — через `acc.getServices(false, HS.C_PulseMeter)[i].getUUID()`.
+Тесты — **от этой спецификации**. Модель прогона: `scenario.run({source: <ProgrammableSwitchEvent кнопки>, value, variables, options, context})` оформляет подписку; затем `setValue` на характеристике счётчика доезжает до колбэка через `HubMock`/`SubscriptionManager`. Так как `ProgrammableSwitchEvent` — `eventLike` (каждая запись = событие), эмиссии считаются независимой тестовой подпиской на кнопку (`hub.subscribeWithCondition('','',[HS.StatelessProgrammableSwitch],[HC.ProgrammableSwitchEvent], cb)`), а не по итоговому значению. Каждый счётчик — отдельный аксессуар, его UUID — `counterAcc.getService(HS.C_PulseMeter).getUUID()`.
 
 - **Оформление подписки в `trigger`**
   - после `trigger` (onStart) изменение выбранного счётчика `+1` → на кнопке появляется соответствующий код
@@ -204,8 +202,6 @@ hasMultipleLogicInChain(str, elements):  // один и тот же LOGIC-пре
   - self-`context` после штатной подписки → не ломает: одиночный инкремент по-прежнему даёт ровно одно событие
 - **Ошибка конфигурации: дубликат счётчика**
   - `singleCounter == doubleCounter` → `logs.byLevel('error')` непуст, подписка не оформлена, событий нет
-- **Целевая характеристика отсутствует**
-  - на аксессуаре-якоре нет `ProgrammableSwitchEvent` → `logs.byLevel('warn')` непуст, без исключения
 - **Невыбранный / чужой счётчик**
   - изменение счётчика, не совпавшего ни с одной опцией → события нет
 
@@ -248,7 +244,7 @@ hasMultipleLogicInChain(str, elements):  // один и тот же LOGIC-пре
 
 - **Опции в замыкании колбэка.** Колбэк захватывает `options` на момент подписки. После смены счётчиков нужно сохранить/переактивировать сценарий, чтобы подписка переоформилась (та же модель, что у `ExternalTempSensor`: «активируйте сценарий заново»). Флаг `subscribed` сбрасывается при рестарте хаба; при простом сохранении надёжнее переактивировать.
 - **Глобальность подписки.** `subscribeWithCondition` по типам `C_PulseMeter/C_PulseCount` ловит счётчики всего хаба; фильтрация — по выбранным UUID в колбэке (как фильтр по `options.sensor` в `ExternalTempSensor`).
-- **Событийная характеристика.** Два одинаковых нажатия подряд (`0 → 0`) в реальном хабе — два события; в эмуляторе повторный `setValue` тем же значением не вызывает `onChange`, поэтому тесты проверяют итоговое значение `getValue() == code`. Возможное расширение (не в v1) — сброс характеристики между событиями.
+- **Событийная характеристика.** `ProgrammableSwitchEvent` помечена `eventLike` и в хабе, и в эмуляторе: повторная запись того же кода (`0 → 0`) — новое событие, а не дубликат. Цикла с self-эхо нет благодаря `isSelfChanged` (§6); тесты считают число эмиссий подпиской на кнопку (§9). Сброс характеристики между событиями не нужен.
 - **Несколько кнопок на аксессуаре.** Берём первый `StatelessProgrammableSwitch`. Многокнопочные устройства (`ServiceLabelIndex`) — вне рамок v1.
 
 ## 15. Вне рамок (YAGNI)

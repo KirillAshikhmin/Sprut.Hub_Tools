@@ -3,11 +3,23 @@
 // на счётчики импульсов (C_PulseMeter/C_PulseCount) и по инкременту выбранного счётчика
 // пишет код события в ProgrammableSwitchEvent: 0=одиночное, 1=двойное, 2=долгое.
 
+// Название сценария с локализацией.
+let scenarioName = {
+  ru: "🔘 Кнопка из счётчиков нажатий",
+  en: "🔘 Button from press counters"
+};
+
+// Описание сценария для опции-статуса «ОПИСАНИЕ» в UI.
+let scenarioDescription = {
+  ru: "Превращает счётчики импульсов кнопочного модуля в событие кнопки.\n\nВыберите счётчик для каждого типа нажатия. Один счётчик нельзя назначить на несколько типов..",
+  en: "Turns a button module's pulse counters into a button.\n\nPick a counter for each press type. One counter cannot map to several types."
+};
+
 // Список счётчиков для опций (обновляется на старте хаба и при сохранении сценария).
 let pulseCounters = getPulseCounters();
 
 info = {
-  name: "Кнопка из счётчиков нажатий",
+  name: scenarioName.ru,
   description: "Превращает счётчики импульсов (короткие/двойные/долгие нажатия) в событие этой кнопки.",
   version: "1.0",
   author: "@BOOMikru",
@@ -16,6 +28,13 @@ info = {
   sourceCharacteristics: [HC.ProgrammableSwitchEvent],
 
   options: {
+    desc: {
+      name: { ru: "  ОПИСАНИЕ", en: "  DESCRIPTION" },
+      desc: scenarioDescription,
+      type: "String",
+      value: "",
+      formType: "status"
+    },
     singleCounter: {
       type: "String", value: "", formType: "list", values: pulseCounters,
       name: { ru: "Счётчик одиночных нажатий", en: "Single press counter" }
@@ -99,8 +118,8 @@ function handleCounter(counterSource, value, variables, options, eventChar) {
   let prev = variables.prev[key];
 
   if (v === 0) { variables.prev[key] = 0; return; }              // сброс — не нажатие
-  if (prev === undefined) { variables.prev[key] = v; return; }   // счётчик впервые виден — не нажатие
-  if (v > prev) {                                                 // положительный инкремент = нажатие
+  if (prev === undefined) { prev = 0; }                          // счётчик впервые виден, сохраняем значение.
+  if (v > prev) {                                                // положительный инкремент = нажатие
     variables.prev[key] = v;
     eventChar.setValue(code);
     logDebug(options, "нажатие типа " + code + " (счётчик " + key + ": " + prev + " -> " + v + ")");

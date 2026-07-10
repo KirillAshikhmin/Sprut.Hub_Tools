@@ -210,6 +210,21 @@ describe('Инициализация базы (первое нажатие не 
 
     expect(vars.prev[counterUUID(single)]).toBe(5);
   });
+
+  it('счётчик недоступен на старте (prev не инициализирован) → первое ненулевое значение даёт событие', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 0);
+    const uuid = counterUUID(single);
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: uuid }), vars);
+
+    // Моделируем «счётчик был недоступен на старте» (initPrev не нашёл): убираем базу.
+    delete vars.prev[uuid];
+
+    pulseChar(single).setValue(100);   // первое появление с накопленным значением
+    expect(events.length).toBe(1);
+    expect(events[0]).toBe(0);
+  });
 });
 
 // --- Спека §6: защита от self-change ---------------------------------------

@@ -254,3 +254,40 @@ describe('Защита от self-change', () => {
     expect(events[0]).toBe(0);
   });
 });
+
+// --- Спека §7: ошибка конфигурации (дубликат счётчика) ---------------------
+
+describe('Ошибка конфигурации: дубликат счётчика', () => {
+  it('один счётчик выбран для single и double → error в логе, подписки/событий нет', ({ hub, scenario, logs }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 0);
+    const uuid = counterUUID(single);
+    const vars = freshVars();
+    const events = pressEvents(hub);
+
+    scenario.run({
+      source: anchorChar(button), value: 0, variables: vars,
+      options: baseOptions({ singleCounter: uuid, doubleCounter: uuid }),
+      context: 'HUB[OnStart]',
+    });
+
+    expect(logs.byLevel('error').length).toBeGreaterThan(0);
+    expect(vars.subscribed).toBe(false);
+
+    pulseChar(single).setValue(1);
+    expect(events.length).toBe(0);
+  });
+
+  it('разные счётчики для разных типов → ошибки нет, подписка оформлена', ({ hub, scenario, logs }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 0);
+    const dbl = makeCounter(hub, 21, 'Счётчик двойных', 0);
+    const vars = freshVars();
+    arm(hub, scenario, button, baseOptions({
+      singleCounter: counterUUID(single), doubleCounter: counterUUID(dbl),
+    }), vars);
+
+    expect(logs.byLevel('error').length).toBe(0);
+    expect(vars.subscribed).toBe(true);
+  });
+});

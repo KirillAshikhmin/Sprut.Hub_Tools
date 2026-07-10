@@ -42,6 +42,10 @@ info = {
 
 function trigger(source, value, variables, options, context) {
   if (isSelfChanged(context)) return;
+  if (hasDuplicateCounters(options)) {
+    console.error("Кнопка из счётчиков нажатий: один счётчик выбран для нескольких типов нажатий — исправьте настройки логики. События не отправляются.");
+    return;
+  }
   setupSubscription(source, variables, options);
 }
 
@@ -110,6 +114,18 @@ function resolveEventCode(key, options) {
   if (options.doubleCounter && key === options.doubleCounter) return 1;
   if (options.longCounter && key === options.longCounter) return 2;
   return -1;
+}
+
+// true, если один и тот же непустой счётчик выбран более чем для одного типа.
+function hasDuplicateCounters(options) {
+  let picked = [];
+  let keys = [options.singleCounter, options.doubleCounter, options.longCounter];
+  for (let i = 0; i < keys.length; i++) {
+    if (!keys[i]) continue;
+    if (picked.indexOf(keys[i]) >= 0) return true;
+    picked.push(keys[i]);
+  }
+  return false;
 }
 
 // Список сервисов-счётчиков импульсов для выпадающих опций.

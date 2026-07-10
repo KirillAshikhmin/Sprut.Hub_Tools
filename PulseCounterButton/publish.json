@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/PulseCounterButton.js",
+      "type": "LOGIC",
+      "json": "Кнопка из счётчиков нажатий.json",
+      "primary": true
+    }
+  ]
+}

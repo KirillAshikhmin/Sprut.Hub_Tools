@@ -1,0 +1,26 @@
+{
+  "name": "Кнопка из счётчиков нажатий — вход 2",
+  "description": "Кнопочный модуль: HomeKit-кнопка и три счётчика импульсов (короткие/двойные/долгие). Выберите в опциях счётчик для каждого типа нажатия и переактивируйте сценарий, затем инкрементируйте счётчики для проверки.",
+  "options": { "singleCounter": "", "doubleCounter": "", "longCounter": "", "debug": true },
+  "variables": {},
+  "rooms": [{ "name": "Прихожая" }],
+  "accessories": [
+    {
+      "id": 100,
+      "name": "Кнопочный модуль",
+      "room": "Прихожая",
+      "target": true,
+      "services": [
+        { "type": "AccessoryInformation", "characteristics": [{ "type": "C_Online", "value": true }] },
+        { "type": "StatelessProgrammableSwitch", "name": "Кнопка",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }] },
+        { "type": "C_PulseMeter", "name": "Счётчик коротких нажатий",
+          "characteristics": [{ "type": "C_PulseCount", "value": 0 }] },
+        { "type": "C_PulseMeter", "name": "Счётчик двойных нажатий",
+          "characteristics": [{ "type": "C_PulseCount", "value": 0 }] },
+        { "type": "C_PulseMeter", "name": "Счётчик длинных нажатий",
+          "characteristics": [{ "type": "C_PulseCount", "value": 0 }] }
+      ]
+    }
+  ]
+}

@@ -133,3 +133,81 @@ describe('Определение типа нажатия', () => {
     expect(events.length).toBe(0);
   });
 });
+
+// --- Спека §8: детект инкремента и игнор сброса ----------------------------
+
+describe('Детект инкремента и сброса', () => {
+  it('игнор сброса: 5 → 0 не даёт события, следующий 0 → 1 даёт', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5); // база = 5
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    pulseChar(single).setValue(0);      // сброс — не нажатие
+    expect(events.length).toBe(0);
+
+    pulseChar(single).setValue(1);      // 0 -> 1 — нажатие
+    expect(events.length).toBe(1);
+    expect(events[0]).toBe(0);
+  });
+
+  it('равное значение не даёт события', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5);
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    pulseChar(single).setValue(5);      // равно базе
+    expect(events.length).toBe(0);
+  });
+
+  it('уменьшение (не 0) не даёт события и синхронизирует базу', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5);
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    pulseChar(single).setValue(4);      // уменьшение — не нажатие
+    expect(events.length).toBe(0);
+
+    pulseChar(single).setValue(5);      // 4 -> 5 — снова нажатие
+    expect(events.length).toBe(1);
+    expect(events[0]).toBe(0);
+  });
+
+  it('скачок +2 даёт ровно одно событие', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5);
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    pulseChar(single).setValue(7);      // 5 -> 7
+    expect(events.length).toBe(1);
+    expect(events[0]).toBe(0);
+  });
+});
+
+// --- Спека §5.3: инициализация базы — первое нажатие не теряется ------------
+
+describe('Инициализация базы (первое нажатие не теряется)', () => {
+  it('счётчик стартует с 5, первый инкремент до 6 даёт событие', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5); // ненулевая база на старте
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    // initPrev прочитал 5; первый же реальный инкремент даёт событие (не «инициализация»)
+    pulseChar(single).setValue(6);
+    expect(events.length).toBe(1);
+    expect(events[0]).toBe(0);
+  });
+
+  it('prev сохраняется в variables', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 5);
+    const vars = freshVars();
+    arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    expect(vars.prev[counterUUID(single)]).toBe(5);
+  });
+});

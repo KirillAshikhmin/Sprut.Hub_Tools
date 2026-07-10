@@ -8,7 +8,7 @@ let pulseCounters = getPulseCounters();
 
 info = {
   name: "Кнопка из счётчиков нажатий",
-  description: "Превращает счётчики импульсов (короткие/двойные/долгие нажатия) в событие HomeKit-кнопки ProgrammableSwitchEvent того же устройства.",
+  description: "Превращает счётчики импульсов (короткие/двойные/долгие нажатия) в событие этой кнопки.",
   version: "1.0",
   author: "@BOOMikru",
   onStart: true,
@@ -18,29 +18,24 @@ info = {
   options: {
     singleCounter: {
       type: "String", value: "", formType: "list", values: pulseCounters,
-      name: { ru: "Счётчик одиночных нажатий", en: "Single press counter" },
-      desc: { ru: "Счётчик импульсов, соответствующий одиночному нажатию", en: "Pulse counter for single press" }
+      name: { ru: "Счётчик одиночных нажатий", en: "Single press counter" }
     },
     doubleCounter: {
       type: "String", value: "", formType: "list", values: pulseCounters,
-      name: { ru: "Счётчик двойных нажатий", en: "Double press counter" },
-      desc: { ru: "Счётчик импульсов, соответствующий двойному нажатию", en: "Pulse counter for double press" }
+      name: { ru: "Счётчик двойных нажатий", en: "Double press counter" }
     },
     longCounter: {
       type: "String", value: "", formType: "list", values: pulseCounters,
-      name: { ru: "Счётчик долгих нажатий", en: "Long press counter" },
-      desc: { ru: "Счётчик импульсов, соответствующий долгому нажатию", en: "Pulse counter for long press" }
+      name: { ru: "Счётчик долгих нажатий", en: "Long press counter" }
     },
     debug: {
       type: "Boolean", value: false,
-      name: { ru: "Отладочный лог", en: "Debug log" },
-      desc: { ru: "Подробный вывод в консоль сценария", en: "Verbose console output" }
+      name: { ru: "Отладочный лог", en: "Debug log" }
     }
   },
 
   variables: {
     subscribed: false,
-    subscription: undefined,
     prev: {}
   }
 };
@@ -57,7 +52,7 @@ function setupSubscription(anchorSource, variables, options) {
 
   initPrev(variables, options);
 
-  variables.subscription = Hub.subscribeWithCondition("", "", [HS.C_PulseMeter], [HC.C_PulseCount],
+  Hub.subscribeWithCondition("", "", [HS.C_PulseMeter], [HC.C_PulseCount],
     function (counterSource, counterValue) {
       handleCounter(counterSource, counterValue, variables, options, eventChar);
     });

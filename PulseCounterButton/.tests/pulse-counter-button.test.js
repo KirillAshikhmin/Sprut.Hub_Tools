@@ -211,3 +211,46 @@ describe('Инициализация базы (первое нажатие не 
     expect(vars.prev[counterUUID(single)]).toBe(5);
   });
 });
+
+// --- Спека §6: защита от self-change ---------------------------------------
+
+describe('Защита от self-change', () => {
+  // Формат self-context: "LOGIC[id] <- C[..] <- LOGIC[id]" (echo собственной записи).
+  const SELF = 'LOGIC[1_btn] <- C[10.2.73 StatelessProgrammableSwitch.ProgrammableSwitchEvent] <- LOGIC[1_btn]';
+
+  it('self-context при первом вызове → подписка не оформляется, событий нет', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 0);
+    const vars = freshVars();
+    const events = pressEvents(hub);
+
+    // trigger приходит как эхо нашей же записи — раньше, чем штатный onStart
+    scenario.run({
+      source: anchorChar(button), value: 0,
+      variables: vars, options: baseOptions({ singleCounter: counterUUID(single) }),
+      context: SELF,
+    });
+
+    expect(vars.subscribed).toBe(false);   // подписка не оформлена
+    pulseChar(single).setValue(1);
+    expect(events.length).toBe(0);         // изменение счётчика ни к чему не приводит
+  });
+
+  it('self-context после штатной подписки не ломает работу', ({ hub, scenario }) => {
+    const button = makeButton(hub, 10);
+    const single = makeCounter(hub, 20, 'Счётчик коротких', 0);
+    const vars = freshVars();
+    const events = arm(hub, scenario, button, baseOptions({ singleCounter: counterUUID(single) }), vars);
+
+    // приходит эхо — не должно оформлять вторую подписку и не должно падать
+    scenario.run({
+      source: anchorChar(button), value: 0,
+      variables: vars, options: baseOptions({ singleCounter: counterUUID(single) }),
+      context: SELF,
+    });
+
+    pulseChar(single).setValue(1);         // одно реальное нажатие
+    expect(events.length).toBe(1);         // ровно одно событие
+    expect(events[0]).toBe(0);
+  });
+});

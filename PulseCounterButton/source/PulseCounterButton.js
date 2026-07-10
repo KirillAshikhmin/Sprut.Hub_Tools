@@ -41,6 +41,7 @@ info = {
 };
 
 function trigger(source, value, variables, options, context) {
+  if (isSelfChanged(context)) return;
   setupSubscription(source, variables, options);
 }
 
@@ -131,6 +132,38 @@ function getCounterName(service) {
   let sName = service.getName();
   let full = (accName === sName) ? accName : (accName + " " + sName);
   return full + " (" + service.getUUID() + ")";
+}
+
+// --- Определение self-change (эталон PassthroughSwitch) ---------------------
+
+let CONTEXT_CONSTANTS = { DELIMITER: " <- ", LOGIC_PREFIX: "LOGIC", CHARACTERISTIC_PREFIX: "C", MIN_ELEMENTS: 3 };
+
+function isSelfChanged(context) {
+  if (!context) return false;
+  let ctx = context.toString();
+  let elements = ctx.split(CONTEXT_CONSTANTS.DELIMITER);
+  if (isSameLogicEcho(elements)) return true;
+  if (hasMultipleLogicInChain(ctx, elements)) return true;
+  return false;
+}
+
+function isSameLogicEcho(elements) {
+  if (elements.length < CONTEXT_CONSTANTS.MIN_ELEMENTS) return false;
+  let firstIsLogic = elements[0].indexOf(CONTEXT_CONSTANTS.LOGIC_PREFIX) === 0;
+  let secondIsChar = elements[1].indexOf(CONTEXT_CONSTANTS.CHARACTERISTIC_PREFIX) === 0;
+  return firstIsLogic && secondIsChar && elements[0] === elements[2];
+}
+
+function hasMultipleLogicInChain(contextStr, elements) {
+  let lastLogic = null;
+  for (let i = elements.length - 1; i >= 0; i--) {
+    if (elements[i].indexOf(CONTEXT_CONSTANTS.LOGIC_PREFIX) === 0) { lastLogic = elements[i]; break; }
+  }
+  if (!lastLogic) return false;
+  let prefix = lastLogic.split(" ")[0];
+  let count = 0, pos = 0;
+  while ((pos = contextStr.indexOf(prefix, pos)) !== -1) { count++; pos += prefix.length; }
+  return count >= 2;
 }
 
 function logDebug(options, message) {

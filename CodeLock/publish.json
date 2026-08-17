@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/CodeLock.js",
+      "type": "LOGIC",
+      "json": "Кодовый замок.json",
+      "primary": true
+    }
+  ]
+}

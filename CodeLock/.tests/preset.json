@@ -1,0 +1,120 @@
+{
+  "name": "Кодовый замок — прихожая",
+  "description": "Умный замок и три кнопки. Код 1S 2D 3S: одиночное на «Кнопка 1», двойное на «Кнопка 2», одиночное на «Кнопка 3». Через 15 секунд замок возвращается в прежнее состояние.",
+  "options": {
+    "code": "1S 2D 3S",
+    "allowExtraPresses": false,
+    "button1": "21.221",
+    "button2": "22.222",
+    "button3": "23.223",
+    "button4": "",
+    "button5": "",
+    "button6": "",
+    "button7": "",
+    "button8": "",
+    "button9": "",
+    "button0": "",
+    "enterButton": "",
+    "pressTimeout": 10,
+    "restoreDelay": 15,
+    "debug": true
+  },
+  "variables": {},
+  "rooms": [{ "name": "Прихожая" }],
+  "accessories": [
+    {
+      "id": 10,
+      "name": "Умный замок",
+      "room": "Прихожая",
+      "target": true,
+      "services": [
+        {
+          "id": 100,
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "id": 101,
+          "type": "LockMechanism",
+          "name": "Замок",
+          "characteristics": [
+            { "type": "LockCurrentState", "value": 1 },
+            { "type": "LockTargetState", "value": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "name": "Кнопка 1",
+      "room": "Прихожая",
+      "services": [
+        {
+          "id": 121,
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "id": 221,
+          "type": "StatelessProgrammableSwitch",
+          "name": "Кнопка",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "name": "Кнопка 2",
+      "room": "Прихожая",
+      "services": [
+        {
+          "id": 122,
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "id": 222,
+          "type": "StatelessProgrammableSwitch",
+          "name": "Кнопка",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "name": "Кнопка 3",
+      "room": "Прихожая",
+      "services": [
+        {
+          "id": 123,
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "id": 223,
+          "type": "StatelessProgrammableSwitch",
+          "name": "Кнопка",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "name": "Кнопка ввода",
+      "room": "Прихожая",
+      "services": [
+        {
+          "id": 124,
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "id": 224,
+          "type": "StatelessProgrammableSwitch",
+          "name": "Кнопка",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
+        }
+      ]
+    }
+  ]
+}

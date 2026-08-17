@@ -1,0 +1,7 @@
+{
+  "$schema": "../../ScenarioSimulator/schemas/config.schema.json",
+  "name": "CodeLock",
+  "scenario": { "globals": [], "logic": ["../source/CodeLock.js"] },
+  "tests": ["*.test.js"],
+  "execution": { "timeoutMs": 5000, "strictMode": "off", "encoding": "utf-8", "isolation": "per-test" }
+}

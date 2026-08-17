@@ -14,6 +14,14 @@ const LOCK_CLOSED = 1;  // LockTargetState: Закрыто
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
+// Контексты в том виде, в каком их выдаёт хаб: собственный фрейм LOGIC[...] присутствует всегда
+// (движок строит его в Qr_VirtualLogic до вызова сценария), дальше идёт цепочка источника.
+const CTX_START = 'LOGIC[Logic/3/1.101/] <- C[1.101.30 LockMechanism.LockTargetState] <- HUB[OnStart] <- 1_1720000000';
+const CTX_EXTERNAL = 'LOGIC[Logic/3/1.101/] <- C[1.101.30 LockMechanism.LockTargetState] <- WEB[user] <- 1_1720000100';
+// Эхо собственной записи: фрейм логики повторяется в цепочке.
+const CTX_SELF = 'LOGIC[Logic/3/1.101/] <- C[1.101.30 LockMechanism.LockTargetState]' +
+  ' <- LOGIC[Logic/3/1.101/] <- C[1.101.30 LockMechanism.LockTargetState] <- HUB[OnStart] <- 1_1720000000';
+
 // --- фикстуры --------------------------------------------------------------
 
 function addButton(hub, id, name) {
@@ -77,7 +85,7 @@ function setupEnv(ctx, o) {
   const vars = freshVars();
   ctx.scenario.run({
     source: anchor, value: anchor.getValue(),
-    variables: vars, options, context: 'HUB[OnStart]',
+    variables: vars, options, context: CTX_START,
   });
 
   return {
@@ -90,7 +98,7 @@ function setupEnv(ctx, o) {
       if (patch) Object.keys(patch).forEach((k) => { next[k] = patch[k]; });
       ctx.scenario.run({
         source: anchor, value: anchor.getValue(),
-        variables: vars, options: next, context: 'HUB[OnSave]',
+        variables: vars, options: next, context: CTX_EXTERNAL,
       });
       return next;
     },
@@ -180,6 +188,13 @@ describe('Парсер кода (спека §4)', () => {
   it('разделители игнорируются', (ctx) => {
     const env = setupEnv(ctx, { options: { code: ' 1S,-2S ' } });
     enterSequence(env, '1S 2S');
+    expect(env.isOpen()).toBe(true);
+  });
+
+  it('кириллические С, Д, Л понимаются как типы нажатий', (ctx) => {
+    // Код набирают на русской раскладке — «1С 2Д 3Л» должно работать как «1S 2D 3L».
+    const env = setupEnv(ctx, { options: { code: '1С 2Д 3Л' } });
+    enterSequence(env, '1S 2D 3L');
     expect(env.isOpen()).toBe(true);
   });
 });
@@ -289,6 +304,27 @@ describe('Кнопка ввода, галка ВКЛ (спека §5: код к�
     env.pressEnter();
     expect(env.vars.buffer.length).toBe(0);
   });
+
+  it('буфер не растёт бесконечно', (ctx) => {
+    const env = setupEnv(ctx, { withEnter: true, options: { code: '1S 2S', allowExtraPresses: true } });
+    for (let i = 0; i < 100; i++) env.press('9');
+    expect(env.vars.buffer.length).toBeLessThanOrEqual(64);
+  });
+
+  it('нажатие «Ввод» без набранного кода не пишет в журнал «неверный код»', (ctx) => {
+    const env = setupEnv(ctx, { withEnter: true, options: { code: '1S 2S' } });
+    ctx.logs.clear();
+    env.pressEnter();
+    expect(ctx.logs.containing('неверный код').length).toBe(0);
+  });
+
+  it('неверный код по «Ввод» пишется в журнал', (ctx) => {
+    const env = setupEnv(ctx, { withEnter: true, options: { code: '1S 2S' } });
+    ctx.logs.clear();
+    env.press('9');
+    env.pressEnter();
+    expect(ctx.logs.containing('неверный код').length).toBeGreaterThan(0);
+  });
 });
 
 describe('Кнопка ввода, галка ВЫКЛ (спека §5: точное равенство)', () => {
@@ -373,6 +409,38 @@ describe('Задержка на ввод (спека §6)', () => {
     env.press('2');
     expect(env.isOpen()).toBe(true);
   });
+
+  it('пауза ровно равная pressTimeout не сбрасывает набранное', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S', pressTimeout: 10 } });
+    env.press('1');
+    ctx.time.advance('10s');
+    env.press('2');
+    expect(env.isOpen()).toBe(true);
+  });
+
+  it('в режиме скользящего окна пауза тоже сбрасывает набранное', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S', allowExtraPresses: true, pressTimeout: 10 } });
+    env.press('1');
+    ctx.time.advance('11s');
+    env.press('2');
+    expect(env.isOpen()).toBe(false);
+  });
+
+  it('с кнопкой ввода пауза сбрасывает набранное до подтверждения', (ctx) => {
+    const env = setupEnv(ctx, { withEnter: true, options: { code: '1S 2S', pressTimeout: 10 } });
+    enterSequence(env, '1S 2S');
+    ctx.time.advance('11s');
+    env.pressEnter();
+    expect(env.isOpen()).toBe(false);
+  });
+
+  it('с кнопкой ввода подтверждение в пределах паузы срабатывает', (ctx) => {
+    const env = setupEnv(ctx, { withEnter: true, options: { code: '1S 2S', pressTimeout: 10 } });
+    enterSequence(env, '1S 2S');
+    ctx.time.advance('9s');
+    env.pressEnter();
+    expect(env.isOpen()).toBe(true);
+  });
 });
 
 // --- Чужие кнопки ----------------------------------------------------------
@@ -385,6 +453,30 @@ describe('Кнопки вне настроек сценария (спека §6)
     foreign.char(BTN, EVT).setValue(SINGLE);
     env.press('2');
     expect(env.isOpen()).toBe(true);
+  });
+
+  it('чужая кнопка не продлевает окно ввода', (ctx) => {
+    // Посторонний звонок или сцена не должны заменять пользователю паузу «Задержки на ввод».
+    const env = setupEnv(ctx, { buttons: ['1', '2'], options: { code: '1S 2S', pressTimeout: 10 } });
+    const foreign = addButton(ctx.hub, 50, 'Чужая кнопка');
+
+    env.press('1');
+    for (let i = 0; i < 12; i++) {
+      ctx.time.advance('5s');
+      foreign.char(BTN, EVT).setValue(SINGLE);
+    }
+    env.press('2');
+    expect(env.isOpen()).toBe(false);
+  });
+
+  it('чужая кнопка не снимает блокировку строгого режима', (ctx) => {
+    const env = setupEnv(ctx, { buttons: ['1', '2', '9'], options: { code: '1S 2S', pressTimeout: 10 } });
+    const foreign = addButton(ctx.hub, 50, 'Чужая кнопка');
+
+    env.press('9');                                   // ошибка — блокировка
+    foreign.char(BTN, EVT).setValue(SINGLE);
+    enterSequence(env, '1S 2S');
+    expect(env.isOpen()).toBe(false);
   });
 });
 
@@ -405,7 +497,7 @@ describe('Действие при верном коде (спека §7)', () =>
     const button = addButton(ctx.hub, 11, 'Кнопка 1');
     const anchor = sw.char(HS.Switch, HC.On);
     const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
-    ctx.scenario.run({ source: anchor, value: false, variables: freshVars(), options, context: 'HUB[OnStart]' });
+    ctx.scenario.run({ source: anchor, value: false, variables: freshVars(), options, context: CTX_START });
 
     button.char(BTN, EVT).setValue(SINGLE);
     expect(anchor.getValue()).toBe(true);
@@ -422,7 +514,7 @@ describe('Действие при верном коде (спека §7)', () =>
     const button = addButton(ctx.hub, 11, 'Кнопка 1');
     const anchor = alarm.char(HS.SecuritySystem, HC.SecuritySystemTargetState);
     const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
-    ctx.scenario.run({ source: anchor, value: 1, variables: freshVars(), options, context: 'HUB[OnStart]' });
+    ctx.scenario.run({ source: anchor, value: 1, variables: freshVars(), options, context: CTX_START });
 
     button.char(BTN, EVT).setValue(SINGLE);
     expect(anchor.getValue()).toBe(3);
@@ -440,7 +532,7 @@ describe('Действие при верном коде (спека §7)', () =>
     const button = addButton(ctx.hub, 11, 'Кнопка 1');
     const anchor = gate.char(HS.GarageDoorOpener, HC.TargetDoorState);
     const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
-    ctx.scenario.run({ source: anchor, value: 1, variables: freshVars(), options, context: 'HUB[OnStart]' });
+    ctx.scenario.run({ source: anchor, value: 1, variables: freshVars(), options, context: CTX_START });
 
     button.char(BTN, EVT).setValue(SINGLE);
     expect(anchor.getValue()).toBe(0);
@@ -450,6 +542,47 @@ describe('Действие при верном коде (спека §7)', () =>
     const env = setupEnv(ctx, { options: { code: '1S' } });
     env.press('1');
     expect(ctx.logs.byLevel('info').length).toBeGreaterThan(0);
+  });
+
+  it('неподдерживаемый тип характеристики — ошибка вместо записи', (ctx) => {
+    const fan = ctx.hub.addAccessory({
+      id: 6, name: 'Вентилятор', room: 'Кухня',
+      services: [{ type: HS.Fan, characteristics: [{ type: HC.Active, value: 0 }] }],
+    });
+    const button = addButton(ctx.hub, 11, 'Кнопка 1');
+    const anchor = fan.char(HS.Fan, HC.Active);
+    const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
+    ctx.scenario.run({ source: anchor, value: 0, variables: freshVars(), options, context: CTX_START });
+
+    button.char(BTN, EVT).setValue(SINGLE);
+
+    expect(anchor.getValue()).toBe(0);
+    expect(ctx.logs.byLevel('error').length).toBeGreaterThan(0);
+  });
+});
+
+// --- §9 Логирование --------------------------------------------------------
+
+describe('Логирование (спека §9)', () => {
+  it('без отладочной опции разбор нажатий в журнал не пишется', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S', debug: false } });
+    ctx.logs.clear();
+    env.press('1');
+    expect(ctx.logs.containing('[CodeLock]').length).toBe(0);
+  });
+
+  it('с отладочной опцией каждое нажатие попадает в журнал', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S', debug: true } });
+    ctx.logs.clear();
+    env.press('1');
+    expect(ctx.logs.containing('[CodeLock]').length).toBeGreaterThan(0);
+  });
+
+  it('планирование автовозврата видно в отладочном журнале', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S', restoreDelay: 30, debug: true } });
+    ctx.logs.clear();
+    env.press('1');
+    expect(ctx.logs.containing('автовозврат').length).toBeGreaterThan(0);
   });
 });
 
@@ -493,6 +626,19 @@ describe('Автовозврат (спека §7)', () => {
     env.rerun();                          // не-self trigger — пользователь тронул устройство
     ctx.time.advance('1h');
     expect(env.isOpen()).toBe(true);
+  });
+
+  it('новый цикл запоминает состояние заново после отработавшего автовозврата', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S', restoreDelay: 30, allowExtraPresses: true } });
+    env.press('1');
+    ctx.time.advance('30s');                      // автовозврат отработал, замок закрыт
+    expect(env.anchor.getValue()).toBe(LOCK_CLOSED);
+
+    env.anchor.setValue(LOCK_OPEN);               // пользователь открыл замок сам
+    env.rerun();
+    env.press('1');                               // верный код при уже открытом замке
+    ctx.time.advance('30s');
+    expect(env.anchor.getValue()).toBe(LOCK_OPEN);// возвращать нечего — замок остаётся открытым
   });
 });
 
@@ -541,7 +687,7 @@ describe('Ошибки конфигурации (спека §8)', () => {
       code: '1S', button1: buttonUUID(button), button2: buttonUUID(button),
     });
     const anchor = lock.char(HS.LockMechanism, HC.LockTargetState);
-    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: freshVars(), options, context: 'HUB[OnStart]' });
+    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: freshVars(), options, context: CTX_START });
 
     expect(ctx.logs.byLevel('error').length).toBeGreaterThan(0);
     button.char(BTN, EVT).setValue(SINGLE);
@@ -555,7 +701,7 @@ describe('Ошибки конфигурации (спека §8)', () => {
       code: '1S', button1: buttonUUID(button), enterButton: buttonUUID(button),
     });
     const anchor = lock.char(HS.LockMechanism, HC.LockTargetState);
-    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: freshVars(), options, context: 'HUB[OnStart]' });
+    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: freshVars(), options, context: CTX_START });
 
     expect(ctx.logs.byLevel('error').length).toBeGreaterThan(0);
   });
@@ -611,9 +757,8 @@ describe('Подписка и опции (спека §2)', () => {
     const anchor = lock.char(HS.LockMechanism, HC.LockTargetState);
     const vars = freshVars();
     const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
-    const SELF = 'LOGIC[1_lock] <- C[1.2.30 LockMechanism.LockTargetState] <- LOGIC[1_lock]';
 
-    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: vars, options, context: SELF });
+    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: vars, options, context: CTX_SELF });
 
     expect(vars.subscribed).toBe(false);
     button.char(BTN, EVT).setValue(SINGLE);
@@ -623,12 +768,113 @@ describe('Подписка и опции (спека §2)', () => {
   it('эхо собственной записи не отменяет автовозврат', (ctx) => {
     const env = setupEnv(ctx, { options: { code: '1S', restoreDelay: 30 } });
     env.press('1');
-    const SELF = 'LOGIC[1_lock] <- C[1.2.30 LockMechanism.LockTargetState] <- LOGIC[1_lock]';
     ctx.scenario.run({
       source: env.anchor, value: LOCK_OPEN,
-      variables: env.vars, options: env.options, context: SELF,
+      variables: env.vars, options: env.options, context: CTX_SELF,
     });
     ctx.time.advance('30s');
     expect(env.anchor.getValue()).toBe(LOCK_CLOSED);
+  });
+
+  it('повторный фрейм логики с другой меткой тоже считается эхом', (ctx) => {
+    // Ловит ветку подсчёта LOGIC отдельно от сравнения сегментов: сегменты различаются,
+    // совпадает только префикс.
+    const env = setupEnv(ctx, { options: { code: '1S', restoreDelay: 30 } });
+    env.press('1');
+    ctx.scenario.run({
+      source: env.anchor, value: LOCK_OPEN, variables: env.vars, options: env.options,
+      context: 'LOGIC[Logic/3/1.101/] first <- C[1.101.30] <- LOGIC[Logic/3/1.101/] second <- HUB[OnStart]',
+    });
+    ctx.time.advance('30s');
+    expect(env.anchor.getValue()).toBe(LOCK_CLOSED);   // автовозврат не был отменён
+  });
+
+  it('обычный контекст хаба с одним фреймом логики эхом не считается', (ctx) => {
+    // Ловит обратную ошибку — слишком жадный self-детект, из-за которого сценарий мёртв.
+    const lock = addLock(ctx.hub);
+    const button = addButton(ctx.hub, 11, 'Кнопка 1');
+    const anchor = lock.char(HS.LockMechanism, HC.LockTargetState);
+    const vars = freshVars();
+    const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
+
+    ctx.scenario.run({ source: anchor, value: LOCK_CLOSED, variables: vars, options, context: CTX_START });
+
+    expect(vars.subscribed).toBe(true);
+    button.char(BTN, EVT).setValue(SINGLE);
+    expect(anchor.getValue()).toBe(LOCK_OPEN);
+  });
+
+  it('снимок опций обновляется при каждом сохранении сценария', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S' } });
+    const other = addButton(ctx.hub, 40, 'Новая кнопка 2');
+    env.rerun({ button2: buttonUUID(other) });
+
+    env.press('1');
+    other.char(BTN, EVT).setValue(SINGLE);     // код набран уже новой кнопкой
+    expect(env.isOpen()).toBe(true);
+  });
+
+  it('переназначенная кнопка перестаёт участвовать в коде', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S 2S' } });
+    const other = addButton(ctx.hub, 40, 'Новая кнопка 2');
+    env.rerun({ button2: buttonUUID(other) });
+
+    enterSequence(env, '1S 2S');               // старая «Кнопка 2» больше не наша
+    expect(env.isOpen()).toBe(false);
+  });
+
+  it('изменённая задержка автовозврата применяется без перезагрузки хаба', (ctx) => {
+    const env = setupEnv(ctx, { options: { code: '1S', restoreDelay: 0 } });
+    env.rerun({ restoreDelay: 30 });
+    env.press('1');
+    expect(env.isOpen()).toBe(true);
+    ctx.time.advance('30s');
+    expect(env.anchor.getValue()).toBe(LOCK_CLOSED);
+  });
+});
+
+// --- §7 Выбор характеристики-якоря -----------------------------------------
+
+describe('Выбор характеристики-якоря (спека §7)', () => {
+  // У GarageDoorOpener LockTargetState — допустимая характеристика, и хаб вызывает trigger
+  // отдельно для каждой подходящей. Действие обязано определяться типом сервиса.
+  function addGate(hub) {
+    return hub.addAccessory({
+      id: 5, name: 'Ворота', room: 'Двор',
+      services: [{
+        type: HS.GarageDoorOpener,
+        characteristics: [
+          { type: HC.CurrentDoorState, value: 1 },
+          { type: HC.TargetDoorState, value: 1 },
+          { type: HC.ObstructionDetected, value: false },
+          { type: HC.LockCurrentState, value: 1 },
+          { type: HC.LockTargetState, value: 1 },
+        ],
+      }],
+    });
+  }
+
+  it('на воротах код открывает створку, даже если trigger пришёл по замку', (ctx) => {
+    const gate = addGate(ctx.hub);
+    const button = addButton(ctx.hub, 11, 'Кнопка 1');
+    const lockChar = gate.char(HS.GarageDoorOpener, HC.LockTargetState);
+    const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
+
+    ctx.scenario.run({ source: lockChar, value: 1, variables: freshVars(), options, context: CTX_START });
+    button.char(BTN, EVT).setValue(SINGLE);
+
+    expect(gate.char(HS.GarageDoorOpener, HC.TargetDoorState).getValue()).toBe(0);
+  });
+
+  it('на воротах характеристика замка не трогается', (ctx) => {
+    const gate = addGate(ctx.hub);
+    const button = addButton(ctx.hub, 11, 'Кнопка 1');
+    const lockChar = gate.char(HS.GarageDoorOpener, HC.LockTargetState);
+    const options = baseOptions({ code: '1S', button1: buttonUUID(button) });
+
+    ctx.scenario.run({ source: lockChar, value: 1, variables: freshVars(), options, context: CTX_START });
+    button.char(BTN, EVT).setValue(SINGLE);
+
+    expect(lockChar.getValue()).toBe(1);
   });
 });

@@ -29,7 +29,7 @@ let buttonServices = getButtonServices();
 info = {
   name: scenarioName.ru,
   description: "Разблокирует замок, снимает охрану или включает выключатель после ввода кода нажатиями на кнопках.",
-  version: "1.0",
+  version: "1.1",
   author: "@BOOMikru",
   onStart: true,
   sourceServices: [HS.LockMechanism, HS.SecuritySystem, HS.Switch, HS.Lightbulb, HS.Outlet, HS.GarageDoorOpener],
@@ -44,7 +44,7 @@ info = {
       formType: "status"
     },
     code: {
-      type: "String", value: "", maxLength: 64,
+      type: "String", value: "", maxLength: 128,
       name: { ru: "Код", en: "Code" },
       desc: {
         ru: "Например: 12357 — одиночные нажатия кнопок 1, 2, 3, 5, 7; 1S 2D 3L — одиночное, двойное, долгое.",
@@ -55,8 +55,12 @@ info = {
       type: "Boolean", value: false,
       name: { ru: "Разрешить произвольные нажатия до и после кода", en: "Allow arbitrary presses before and after the code" },
       desc: {
-        ru: "Выключено — код должен быть введён с первого нажатия: ошибка блокирует ввод до паузы «Задержка на ввод».",
-        en: "Off — the code must start the sequence: a mistake blocks input until the entry delay passes."
+        ru: "Включено — лишние нажатия до и после кода не мешают. Выключено: без «Кнопки ввода» код должен " +
+          "начинать последовательность, а ошибка блокирует ввод до паузы «Задержка на ввод»; " +
+          "с «Кнопкой ввода» набранное должно точно совпасть с кодом.",
+        en: "On — extra presses before and after the code do not matter. Off: without the enter button the code " +
+          "must start the sequence and a mistake blocks input until the entry delay passes; " +
+          "with the enter button the collected presses must match the code exactly."
       }
     },
     button1: {
@@ -141,7 +145,9 @@ info = {
   }
 };
 
-let PRESS_TYPES = { S: 0, D: 1, L: 2 };
+// Типы нажатий в коде. Кириллические С/Д/Л приняты как синонимы: код часто набирают,
+// не переключая раскладку.
+let PRESS_TYPES = { S: 0, D: 1, L: 2, "С": 0, "Д": 1, "Л": 2 };
 let CODE_DIGITS = "1234567890";
 let CODE_SEPARATORS = " \t,.-+_";
 let DEFAULT_BUTTON = "1";
@@ -154,7 +160,26 @@ function trigger(source, value, variables, options, context) {
   cancelRestore(variables);                 // ручное вмешательство отменяет автовозврат
   variables.opts = options;
   variables.code = buildCode(options);
-  setupSubscription(source, variables);
+  setupSubscription(resolveAnchor(source), variables);
+}
+
+// Характеристика, в которую сценарий пишет при верном коде. Определяется типом сервиса, а не тем,
+// с какой характеристики пришёл первый trigger: у ворот, например, кроме TargetDoorState бывает
+// и LockTargetState, и хаб вызывает trigger отдельно для каждой из них.
+function resolveAnchor(source) {
+  let service = source.getService();
+  let type = anchorCharacteristicType(service.getType());
+  if (!type) return source;
+  let characteristic = service.getCharacteristic(type);
+  return characteristic ? characteristic : source;
+}
+
+function anchorCharacteristicType(serviceType) {
+  if (serviceType === HS.LockMechanism) return HC.LockTargetState;
+  if (serviceType === HS.SecuritySystem) return HC.SecuritySystemTargetState;
+  if (serviceType === HS.GarageDoorOpener) return HC.TargetDoorState;
+  if (serviceType === HS.Switch || serviceType === HS.Lightbulb || serviceType === HS.Outlet) return HC.On;
+  return null;
 }
 
 // Оформляет подписку на кнопки один раз. Подписка нужна и при невалидной конфигурации:
@@ -314,6 +339,7 @@ function collectUntilEnter(variables, step) {
 }
 
 function checkOnEnter(variables, code, anchor) {
+  let collected = variables.buffer.length;
   let matched = variables.opts.allowExtraPresses
     ? containsSequence(variables.buffer, code)
     : sequenceEquals(variables.buffer, code);
@@ -321,6 +347,10 @@ function checkOnEnter(variables, code, anchor) {
   variables.buffer = [];
   if (matched) {
     succeed(variables, anchor);
+    return;
+  }
+  if (!collected) {                         // «Ввод» на пустом буфере — не попытка ввода
+    logDebug(variables.opts, "нажата кнопка ввода без набранного кода");
     return;
   }
   console.info("Кодовый замок: введён неверный код");
@@ -358,10 +388,11 @@ function scheduleRestore(variables, anchor) {
   if (!delay) return;
 
   if (variables.restoreTask) clearTimeout(variables.restoreTask);
+  logDebug(variables.opts, "автовозврат в состояние " + variables.restoreValue + " запланирован через " + delay + " с");
   variables.restoreTask = setTimeout(function () {
     variables.restoreTask = undefined;
     anchor.setValue(variables.restoreValue);
-    logDebug(variables.opts, "автовозврат в состояние " + variables.restoreValue);
+    logDebug(variables.opts, "автовозврат выполнен: " + variables.restoreValue);
   }, delay * 1000);
 }
 
@@ -444,6 +475,9 @@ function getServiceName(service) {
 
 let CONTEXT_CONSTANTS = { DELIMITER: " <- ", LOGIC_PREFIX: "LOGIC", CHARACTERISTIC_PREFIX: "C", MIN_ELEMENTS: 3 };
 
+// Примечание: любая цепочка, которую ловит isSameLogicEcho, содержит префикс LOGIC-сегмента
+// дважды, поэтому её ловит и hasMultipleLogicInChain. Первая проверка оставлена для единообразия
+// с каноном репозитория (PassthroughSwitch, PulseCounterButton), а не как самостоятельное условие.
 function isSelfChanged(context) {
   if (!context) return false;
   let ctx = context.toString();

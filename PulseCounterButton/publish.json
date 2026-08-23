@@ -3,7 +3,7 @@
     {
       "source": "source/PulseCounterButton.js",
       "type": "LOGIC",
-      "json": "Кнопка из счётчиков нажатий.json",
+      "json": "PulseCounterButton.json",
       "primary": true
     }
   ]

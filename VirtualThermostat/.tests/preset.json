@@ -5,8 +5,11 @@
     "sensor": "",
     "heatingRelay": "",
     "coolingRelay": "",
+    "heatingRelayInvert": false,
+    "coolingRelayInvert": false,
     "fanTempStep": 0.5,
     "fanSpeedManualLock": true,
+    "offBehavior": 0,
     "failureBehavior": 0,
     "failureTimeout": 240,
     "debug": true

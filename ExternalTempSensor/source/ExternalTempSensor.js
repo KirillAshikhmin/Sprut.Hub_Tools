@@ -76,8 +76,8 @@ info = {
                 ru: "Периодически менять значение температуры"
             },
             desc: {
-                en: "For thermostats not to switch to internal sensor. Changes temperature only if last update was more than 30 minutes ago.",
-                ru: "Для того, что бы термоголовка не переключалась на внутренний датчик. Меняет температуру только если последнее обновление было более получаса назад."
+                en: "Periodically nudges the temperature on the thermostat so that the thermostat doesn't switch to its internal sensor. Pick an interval matching your thermostat's timeout: 30 minutes (Danfoss eTRV0101, timeout 35 min) or 1 hour (SONOFF TRVZB, timeout 2 hours). The nudge is skipped if the external sensor has updated recently (within 5 min for the 30-minute mode, within 60 min for the 1-hour mode).",
+                ru: "Периодически «встряхивает» значение температуры на термоголовке, чтобы она не переключилась на внутренний датчик. Выберите интервал под таймаут вашей термоголовки: 30 минут (Danfoss eTRV0101, таймаут 35 мин) или 1 час (SONOFF TRVZB, таймаут 2 часа). Встряска пропускается, если внешний датчик недавно обновлялся (менее 5 мин назад в режиме 30 минут, менее 60 мин назад в режиме 1 час)."
             },
             type: "Integer",
             value: 0,

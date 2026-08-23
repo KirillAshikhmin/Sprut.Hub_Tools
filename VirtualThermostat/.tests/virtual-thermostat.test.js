@@ -77,10 +77,13 @@ function baseOptions(overrides) {
     sensor: '',
     heatingRelay: '',
     coolingRelay: '',
+    heatingRelayInvert: false,
+    coolingRelayInvert: false,
     fanTempStep: 0.5,
     fanSpeedManualLock: true,
     emulateThermostat: false,
     hysteresis: 0.5,
+    offBehavior: 0,
     failureBehavior: 0,
     failureTimeout: 240,
     debug: false,
@@ -102,6 +105,7 @@ function freshVars() {
     failureCheckTask: undefined,
     sensorFailed: false,
     lastUserTargetState: undefined,
+    offBehaviorApplied: false,
   };
 }
 
@@ -709,9 +713,9 @@ describe('README §"Эмуляция обычного термостата" — 
 // "Текущий режим всегда Выключен"
 // ---------------------------------------------------------------------------
 
-describe('README §"Эмуляция: пассивные режимы → CurrentHCState=0"', () => {
-  function runWith(hub, scenario, targetState) {
-    const t = makeThermostat(hub, 10, 1, targetState, { currentTemp: 15, targetTemp: 22 });
+describe('README §"Эмуляция: OFF → 0; FAN/DRY — не трогаем (как в штатной логике)"', () => {
+  function runWith(hub, scenario, targetState, currentState) {
+    const t = makeThermostat(hub, 10, currentState, targetState, { currentTemp: 15, targetTemp: 22 });
     const sensor = makeTempSensor(hub, 30, 15);
     const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
     scenario.run({
@@ -725,27 +729,27 @@ describe('README §"Эмуляция: пассивные режимы → Curren
   }
 
   it('OFF (0) → CurrentHCState=0', ({ hub, scenario }) => {
-    const t = runWith(hub, scenario, 0);
+    const t = runWith(hub, scenario, 0, 1);
     expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
   });
 
-  it('FAN_ONLY (-1) → CurrentHCState=0', ({ hub, scenario }) => {
-    const t = runWith(hub, scenario, -1);
-    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
+  it('FAN_ONLY (-1) → CurrentHCState не меняется', ({ hub, scenario }) => {
+    const t = runWith(hub, scenario, -1, 1);
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(1);
   });
 
-  it('DRY (-2) → CurrentHCState=0', ({ hub, scenario }) => {
-    const t = runWith(hub, scenario, -2);
-    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
+  it('DRY (-2) → CurrentHCState не меняется', ({ hub, scenario }) => {
+    const t = runWith(hub, scenario, -2, 2);
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(2);
   });
 });
 
 // ---------------------------------------------------------------------------
-// README §"Эмуляция: HEAT/ECO — учитывается Целевая температура"
-// "current ≤ target − hysteresis → нагрев; current ≥ target + hysteresis → выключен"
+// README §"Эмуляция: HEAT — учитывается Целевая температура (эталон GenericThermostat)"
+// "выкл при temp ≥ target; нагрев при target − temp ≥ hysteresis; иначе держим"
 // ---------------------------------------------------------------------------
 
-describe('README §"Эмуляция: HEAT — гистерезис вокруг TargetTemperature"', () => {
+describe('README §"Эмуляция: HEAT — мёртвая зона ниже Целевой температуры"', () => {
   it('current=21.4, target=22, h=0.5 → CurrentHCState=1 (нужно греть)', ({ hub, scenario }) => {
     const t = makeThermostat(hub, 10, 0, 1, { currentTemp: 21.4, targetTemp: 22 });
     const sensor = makeTempSensor(hub, 30, 21.4);
@@ -780,7 +784,24 @@ describe('README §"Эмуляция: HEAT — гистерезис вокруг
     expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
   });
 
-  it('currentState=1 + current=22.0 (в deadband) → CurrentHCState не меняется (=1)', ({ hub, scenario }) => {
+  it('currentState=1 + current=21.8 (в мёртвой зоне target-h..target) → CurrentHCState не меняется (=1)', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 1, 1, { currentTemp: 21.8, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 21.8);
+    const source = t.char(HS.Thermostat, HC.CurrentTemperature);
+
+    scenario.run({
+      source, value: 21.8, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        emulateThermostat: true,
+        hysteresis: 0.5,
+      }), context: '',
+    });
+
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(1);
+  });
+
+  it('currentState=1 + current=22.0 (=target) → CurrentHCState=0 (эталон выключает при достижении цели)', ({ hub, scenario }) => {
     const t = makeThermostat(hub, 10, 1, 1, { currentTemp: 22.0, targetTemp: 22 });
     const sensor = makeTempSensor(hub, 30, 22.0);
     const source = t.char(HS.Thermostat, HC.CurrentTemperature);
@@ -794,11 +815,11 @@ describe('README §"Эмуляция: HEAT — гистерезис вокруг
       }), context: '',
     });
 
-    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(1);
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
   });
 
-  it('ECO (-3) работает как HEAT', ({ hub, scenario }) => {
-    const t = makeThermostat(hub, 10, 0, -3, { currentTemp: 18, targetTemp: 22 });
+  it('ECO (-3) → CurrentHCState не меняется (штатная логика режим ECO не обрабатывает)', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 2, -3, { currentTemp: 18, targetTemp: 22 });
     const sensor = makeTempSensor(hub, 30, 18);
     const source = t.char(HS.Thermostat, HC.CurrentTemperature);
 
@@ -811,7 +832,8 @@ describe('README §"Эмуляция: HEAT — гистерезис вокруг
       }), context: '',
     });
 
-    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(1);
+    // Несмотря на то что по нагреву было бы 1, ECO штатная логика не трогает → остаётся 2
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(2);
   });
 });
 
@@ -837,13 +859,13 @@ describe('README §"Эмуляция: COOL — гистерезис вокруг
     expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(2);
   });
 
-  it('currentState=2 + current=23.4 (target-h) → CurrentHCState=0 (охладились)', ({ hub, scenario }) => {
-    const t = makeThermostat(hub, 10, 2, 2, { currentTemp: 23.4, targetTemp: 24 });
-    const sensor = makeTempSensor(hub, 30, 23.4);
+  it('currentState=2 + current=24.0 (=target) → CurrentHCState=0 (эталон выключает при достижении цели)', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 2, 2, { currentTemp: 24.0, targetTemp: 24 });
+    const sensor = makeTempSensor(hub, 30, 24.0);
     const source = t.char(HS.Thermostat, HC.CurrentTemperature);
 
     scenario.run({
-      source, value: 23.4, variables: freshVars(),
+      source, value: 24.0, variables: freshVars(),
       options: baseOptions({
         sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
         emulateThermostat: true,
@@ -852,6 +874,24 @@ describe('README §"Эмуляция: COOL — гистерезис вокруг
     });
 
     expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
+  });
+
+  it('currentState=2 + current=23.7 (в мёртвой зоне target..target+h) → не меняется (=2)', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 2, 2, { currentTemp: 24.3, targetTemp: 24 });
+    const sensor = makeTempSensor(hub, 30, 24.3);
+    const source = t.char(HS.Thermostat, HC.CurrentTemperature);
+
+    scenario.run({
+      source, value: 24.3, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        emulateThermostat: true,
+        hysteresis: 0.5,
+      }), context: '',
+    });
+
+    // temp=24.3: > target(24), но temp-target=0.3 < h=0.5 → мёртвая зона, держим текущий режим
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(2);
   });
 });
 
@@ -986,6 +1026,25 @@ describe('README §"Эмуляция: AUTO — фолбэк на TargetTemperatu
 
     expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(0);
   });
+
+  it('есть только coolThr (heatThr нет) → фолбэк на TargetTemperature (как в штатной: нет хотя бы одного порога)', ({ hub, scenario }) => {
+    // Только Порог охлаждения; Порога нагрева нет → эталон уходит в фолбэк на Целевую температуру
+    const t = makeThermostat(hub, 10, 0, 3, { currentTemp: 21.4, targetTemp: 22, coolThr: 24 });
+    const sensor = makeTempSensor(hub, 30, 21.4);
+    const source = t.char(HS.Thermostat, HC.CurrentTemperature);
+
+    scenario.run({
+      source, value: 21.4, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        emulateThermostat: true,
+        hysteresis: 0.5,
+      }), context: '',
+    });
+
+    // Фолбэк на target=22: target-temp=0.6 >= 0.5 → нагрев
+    expect(t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).getValue()).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1025,16 +1084,17 @@ describe('README §"Время до отказа" — настройки info', 
     expect(info.options.failureTimeout.minStep).toBe(15);
   });
 
-  it('опция failureBehavior имеет 4 значения и default=0 (Отключить)', ({ scenario }) => {
+  it('опция failureBehavior имеет 5 значений и default=0 (Отключить все)', ({ scenario }) => {
     const info = scenario.info();
     expect(info.options.failureBehavior).not.toBeUndefined();
     expect(info.options.failureBehavior.value).toBe(0);
-    expect(info.options.failureBehavior.values.length).toBe(4);
+    expect(info.options.failureBehavior.values.length).toBe(5);
     const values = info.options.failureBehavior.values.map((v) => v.value);
-    expect(values).toContain(0); // Отключить
+    expect(values).toContain(0); // Отключить все
     expect(values).toContain(1); // Нагрев
     expect(values).toContain(2); // Охлаждение
     expect(values).toContain(3); // Ничего не делать
+    expect(values).toContain(4); // Включить все
   });
 });
 
@@ -1408,7 +1468,7 @@ describe('README §"Смена режима во время отказа"', () =
     expect(vars.lastUserTargetState).toBe(2);
     // Лог-ошибка
     const errors = logs.byLevel('error');
-    const hasUserChangeLog = errors.some((e) => e.message.indexOf('Пользователь сменил Целевой режим') >= 0);
+    const hasUserChangeLog = errors.some((e) => e.message.indexOf('Датчик температуры отказал. Режим будет сброшен в Выключен') >= 0);
     expect(hasUserChangeLog).toBe(true);
     // applyFailureBehavior сбросил Целевой режим в 0 и реле выкл
     expect(t.char(HS.Thermostat, HC.TargetHeatingCoolingState).getValue()).toBe(0);
@@ -1435,7 +1495,7 @@ describe('README §"Смена режима во время отказа"', () =
 
     expect(vars.lastUserTargetState).toBe(0);
     const errors = logs.byLevel('error');
-    const hasUserChangeLog = errors.some((e) => e.message.indexOf('Пользователь сменил Целевой режим') >= 0);
+    const hasUserChangeLog = errors.some((e) => e.message.indexOf('Датчик температуры отказал. Режим будет сброшен в Выключен') >= 0);
     expect(hasUserChangeLog).toBe(false);
   });
 });
@@ -1567,5 +1627,469 @@ describe('README §"Лог-ошибка при обнаружении отказ
     const errors = logs.byLevel('error');
     const hasFailureLog = errors.some((e) => e.message.indexOf('Нет показаний от датчика') >= 0);
     expect(hasFailureLog).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Инвертировать реле" + §"Поведение при отключении термостата" — info
+// ---------------------------------------------------------------------------
+
+describe('README §"Инвертировать реле" — настройки info', () => {
+  it('опция heatingRelayInvert: Boolean, default false', ({ scenario }) => {
+    const info = scenario.info();
+    expect(info.options.heatingRelayInvert).not.toBeUndefined();
+    expect(info.options.heatingRelayInvert.type).toBe('Boolean');
+    expect(info.options.heatingRelayInvert.value).toBe(false);
+  });
+
+  it('опция coolingRelayInvert: Boolean, default false', ({ scenario }) => {
+    const info = scenario.info();
+    expect(info.options.coolingRelayInvert).not.toBeUndefined();
+    expect(info.options.coolingRelayInvert.type).toBe('Boolean');
+    expect(info.options.coolingRelayInvert.value).toBe(false);
+  });
+});
+
+describe('README §"Поведение при отключении термостата" — настройки info', () => {
+  it('опция offBehavior имеет 4 значения и default=0 (Отключить все реле)', ({ scenario }) => {
+    const info = scenario.info();
+    expect(info.options.offBehavior).not.toBeUndefined();
+    expect(info.options.offBehavior.value).toBe(0);
+    expect(info.options.offBehavior.values.length).toBe(4);
+    const values = info.options.offBehavior.values.map((v) => v.value);
+    expect(values).toContain(0); // Отключить все реле
+    expect(values).toContain(1); // Включить все реле
+    expect(values).toContain(2); // Нагрев
+    expect(values).toContain(3); // Охлаждение
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Инвертировать реле нагрева":
+//   "При включении нагрева реле отключается, при отключении нагрева — включается"
+// ---------------------------------------------------------------------------
+
+describe('README §"Инвертировать реле нагрева"', () => {
+  it('режим Нагрев (current=1) + invert → реле нагрева физически OFF', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 1, 1, { currentTemp: 18, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 18);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const cool = makeRelay(hub, 21, 'Охлаждение', true);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+
+    scenario.run({
+      source, value: 1, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        heatingRelayInvert: true,
+      }), context: '',
+    });
+
+    // Логически нагрев ON → физически OFF (инверсия)
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+    // Реле охлаждения не инвертировано: логически OFF → физически OFF
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+
+  it('отключение нагрева (зона комфорта current=0 в активном режиме) + invert → реле нагрева физически ON', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 0, 1, { currentTemp: 22, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 22);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+
+    scenario.run({
+      source, value: 0, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        heatingRelayInvert: true,
+      }), context: '',
+    });
+
+    // Логически нагрев OFF → физически ON (инверсия)
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+});
+
+describe('README §"Инвертировать реле охлаждения"', () => {
+  it('режим Охлаждение (current=2) + invert → реле охлаждения физически OFF', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 2, 2, { currentTemp: 26, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 26);
+    const cool = makeRelay(hub, 21, 'Охлаждение', false);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+
+    scenario.run({
+      source, value: 2, variables: freshVars(),
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        coolingRelayInvert: true,
+      }), context: '',
+    });
+
+    // Логически охлаждение ON → физически OFF (инверсия)
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Поведение при отключении термостата"
+// Применяется к Выключено (0), Вентилятор (-1) и Осушитель (-2).
+// ---------------------------------------------------------------------------
+
+function runOff(hub, scenario, targetState, behavior, heatInit, coolInit, opts) {
+  opts = opts || {};
+  const t = makeThermostat(hub, 10, 0, targetState);
+  const sensor = makeTempSensor(hub, 30, 20);
+  const heat = makeRelay(hub, 20, 'Нагрев', heatInit);
+  const cool = makeRelay(hub, 21, 'Охлаждение', coolInit);
+  const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
+  const vars = opts.variables || freshVars();
+
+  scenario.run({
+    source, value: targetState, variables: vars,
+    options: baseOptions({
+      sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+      heatingRelay: heat.getService(HS.Switch).getUUID(),
+      coolingRelay: cool.getService(HS.Switch).getUUID(),
+      offBehavior: behavior,
+      heatingRelayInvert: opts.heatingRelayInvert === true,
+      coolingRelayInvert: opts.coolingRelayInvert === true,
+    }), context: '',
+  });
+
+  return { heat, cool, t, vars, source };
+}
+
+describe('README §"Поведение при отключении термостата"', () => {
+  it('offBehavior=0 (Отключить все реле) + Выключено → оба реле физически OFF', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 0, true, true);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+
+  it('offBehavior=1 (Включить все реле) + Выключено → оба реле физически ON', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 1, false, false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+
+  it('offBehavior=2 (Нагрев) + Выключено → нагрев ON, охлаждение OFF', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 2, false, true);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+
+  it('offBehavior=3 (Охлаждение) + Выключено → охлаждение ON, нагрев OFF', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 3, true, false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+
+  it('offBehavior распространяется на Вентилятор (-1): Включить все реле → оба ON', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, -1, 1, false, false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+
+  it('offBehavior распространяется на Осушитель (-2): Включить все реле → оба ON', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, -2, 1, false, false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Отключить/Включить все реле — без учёта инверсии"
+// ---------------------------------------------------------------------------
+
+describe('README §"Отключить/Включить все реле игнорируют инверсию"', () => {
+  it('offBehavior=0 (Отключить все реле) + инверсия нагрева → нагрев всё равно физически OFF', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 0, true, true, { heatingRelayInvert: true, coolingRelayInvert: true });
+    // Инверсия не учитывается: оба реле физически OFF
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+
+  it('offBehavior=1 (Включить все реле) + инверсия нагрева → нагрев всё равно физически ON', ({ hub, scenario }) => {
+    const { heat, cool } = runOff(hub, scenario, 0, 1, false, false, { heatingRelayInvert: true, coolingRelayInvert: true });
+    // Инверсия не учитывается: оба реле физически ON
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+  });
+
+  it('offBehavior=2 (Нагрев) + инверсия нагрева → реле нагрева физически OFF (инверсия учитывается)', ({ hub, scenario }) => {
+    const { heat } = runOff(hub, scenario, 0, 2, true, false, { heatingRelayInvert: true });
+    // Логически нагрев ON → физически OFF (инверсия)
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Поведение при отключении применяется один раз"
+// "Пока термостат отключён, сценарий больше не управляет реле"
+// ---------------------------------------------------------------------------
+
+describe('README §"offBehavior применяется один раз"', () => {
+  it('повторный trigger в отключённом режиме не перезаписывает изменённое вручную реле', ({ hub, scenario }) => {
+    // Первый раз: Включить все реле → оба ON, offBehaviorApplied=true
+    const { heat, cool, vars, source } = runOff(hub, scenario, 0, 1, false, false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(vars.offBehaviorApplied).toBe(true);
+
+    // Пользователь вручную выключил реле нагрева
+    heat.char(HS.Switch, HC.On).setValue(false);
+
+    // Повторный trigger в том же отключённом режиме (те же variables)
+    scenario.run({
+      source, value: 0, variables: vars,
+      options: baseOptions({
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        offBehavior: 1,
+      }), context: '',
+    });
+
+    // Сценарий не вернул реле нагрева в ON — оставил как поставил пользователь
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+
+  it('возврат в активный режим сбрасывает offBehaviorApplied и восстанавливает управление реле', ({ hub, scenario }) => {
+    // Отключение: Включить все реле → offBehaviorApplied=true
+    const { heat, cool, vars, t } = runOff(hub, scenario, 0, 1, false, false);
+    expect(vars.offBehaviorApplied).toBe(true);
+
+    // Переходим в активный режим Нагрев (current=1)
+    t.char(HS.Thermostat, HC.CurrentHeatingCoolingState).setValue(1);
+    t.char(HS.Thermostat, HC.TargetHeatingCoolingState).setValue(1);
+    const source2 = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+
+    scenario.run({
+      source: source2, value: 1, variables: vars,
+      options: baseOptions({
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        offBehavior: 1,
+      }), context: '',
+    });
+
+    // Флаг сброшен, обычная логика отработала: нагрев ON, охлаждение OFF
+    expect(vars.offBehaviorApplied).toBe(false);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Поведение при отказе датчика температуры" — Включить все (4)
+// ---------------------------------------------------------------------------
+
+describe('README §"failureBehavior=Включить все"', () => {
+  it('оба реле ON, TargetHCState НЕ меняется', ({ hub, scenario, time }) => {
+    const t = makeThermostat(hub, 10, 0, 1, { currentTemp: 22, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 22);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const cool = makeRelay(hub, 21, 'Охлаждение', false);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+    const vars = freshVars();
+    vars.lastTemp = 22;
+    vars.lastUpdateTime = time.now() - 5 * 60 * 60 * 1000;
+
+    scenario.run({
+      source, value: 0, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        failureBehavior: 4,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    time.tick(15 * 60 * 1000);
+
+    expect(vars.sensorFailed).toBe(true);
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(true);
+    // Целевой режим не меняется — остался 1 (Heat)
+    expect(t.char(HS.Thermostat, HC.TargetHeatingCoolingState).getValue()).toBe(1);
+  });
+});
+
+describe('README §"Инверсия применяется при отказе датчика"', () => {
+  it('failureBehavior=0 (Отключить все) + инверсия нагрева → нагрев физически ON, TargetHCState=0', ({ hub, scenario, time }) => {
+    const t = makeThermostat(hub, 10, 1, 1, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const cool = makeRelay(hub, 21, 'Охлаждение', true);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+    const vars = freshVars();
+    vars.lastTemp = 20;
+    vars.lastUpdateTime = time.now() - 5 * 60 * 60 * 1000;
+
+    scenario.run({
+      source, value: 1, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+        heatingRelayInvert: true,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    time.tick(15 * 60 * 1000);
+
+    expect(vars.sensorFailed).toBe(true);
+    expect(t.char(HS.Thermostat, HC.TargetHeatingCoolingState).getValue()).toBe(0);
+    // Логически нагрев OFF → физически ON (инверсия)
+    expect(heat.char(HS.Switch, HC.On).getValue()).toBe(true);
+    // Охлаждение не инвертировано: логически OFF → физически OFF
+    expect(cool.char(HS.Switch, HC.On).getValue()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// README §"Отказ датчика не отслеживается при выключенном термостате"
+// "Выключили термостат — никаких уведомлений и действий с реле. При включении —
+//  возобновить отслеживание и сразу проверить датчик."
+// ---------------------------------------------------------------------------
+
+describe('README §"Отказ датчика при выключенном термостате"', () => {
+  it('термостат выключен пользователем → cron НЕ фиксирует отказ, нет ошибки в логе', ({ hub, scenario, time, logs }) => {
+    const t = makeThermostat(hub, 10, 0, 0, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
+    const vars = freshVars();
+    vars.lastUserTargetState = 0; // пользователь выключил термостат
+    vars.lastTemp = 20;
+    vars.lastUpdateTime = time.now() - 5 * 60 * 60 * 1000; // данных нет уже 5 часов (просрочено)
+
+    scenario.run({
+      source, value: 0, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    time.tick(15 * 60 * 1000);
+
+    // Отказ не зафиксирован, уведомление не отправлено, термостат остался выключен
+    expect(vars.sensorFailed).toBe(false);
+    const errors = logs.byLevel('error');
+    expect(errors.some((e) => e.message.indexOf('Нет показаний от датчика') >= 0)).toBe(false);
+    expect(t.char(HS.Thermostat, HC.TargetHeatingCoolingState).getValue()).toBe(0);
+  });
+
+  it('пользователь выключает термостат при активном отказе → sensorFailed снимается', ({ hub, scenario }) => {
+    const t = makeThermostat(hub, 10, 1, 1, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', true);
+    const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
+    const vars = freshVars();
+    vars.sensorFailed = true;
+    vars.lastUserTargetState = 1;
+
+    // Пользователь переводит термостат в Выключено
+    scenario.run({
+      source, value: 0, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+      }), context: '',
+    });
+
+    expect(vars.sensorFailed).toBe(false);
+  });
+
+  it('включение термостата при недоступном датчике → немедленно фиксируется отказ + ошибка в логе', ({ hub, scenario, time, logs }) => {
+    // Термостат включается в Нагрев (target=1), датчик недоступен (данные просрочены)
+    const t = makeThermostat(hub, 10, 0, 1, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const cool = makeRelay(hub, 21, 'Охлаждение', false);
+    const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
+    const vars = freshVars();
+    vars.lastUserTargetState = 0; // до этого был выключен
+    vars.lastTemp = 20;           // = показанию датчика → lastUpdateTime не обновится
+    vars.lastUpdateTime = time.now() - 5 * 60 * 60 * 1000; // просрочено
+
+    scenario.run({
+      source, value: 1, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        coolingRelay: cool.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    // Уведомление отправлено сразу при включении, не дожидаясь cron
+    expect(vars.sensorFailed).toBe(true);
+    const errors = logs.byLevel('error');
+    expect(errors.some((e) => e.message.indexOf('Нет показаний от датчика') >= 0)).toBe(true);
+  });
+
+  it('включение термостата при живом датчике → отказ НЕ фиксируется', ({ hub, scenario, time, logs }) => {
+    const t = makeThermostat(hub, 10, 0, 1, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const source = t.char(HS.Thermostat, HC.TargetHeatingCoolingState);
+    const vars = freshVars();
+    vars.lastUserTargetState = 0;
+    vars.lastTemp = 20;
+    vars.lastUpdateTime = time.now() - 60 * 1000; // данные свежие (1 мин назад)
+
+    scenario.run({
+      source, value: 1, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    expect(vars.sensorFailed).toBe(false);
+    const errors = logs.byLevel('error');
+    expect(errors.some((e) => e.message.indexOf('Нет показаний от датчика') >= 0)).toBe(false);
+  });
+
+  it('failureBehavior=0: сценарий сам сбросил target в 0 — это НЕ пользовательское выключение, мониторинг продолжается', ({ hub, scenario, time }) => {
+    // Термостат показывает Выключено (сценарий сбросил при отказе), но пользователь хочет Нагрев
+    const t = makeThermostat(hub, 10, 0, 0, { currentTemp: 20, targetTemp: 22 });
+    const sensor = makeTempSensor(hub, 30, 20);
+    const heat = makeRelay(hub, 20, 'Нагрев', false);
+    const source = t.char(HS.Thermostat, HC.CurrentHeatingCoolingState);
+    const vars = freshVars();
+    vars.sensorFailed = true;       // отказ уже зафиксирован
+    vars.lastUserTargetState = 1;   // пользователь хочет Нагрев (target=0 поставил сценарий)
+    vars.lastTemp = 20;
+    vars.lastUpdateTime = time.now() - 5 * 60 * 60 * 1000;
+
+    scenario.run({
+      source, value: 0, variables: vars,
+      options: baseOptions({
+        sensor: sensor.getService(HS.TemperatureSensor).getUUID(),
+        heatingRelay: heat.getService(HS.Switch).getUUID(),
+        failureBehavior: 0,
+        failureTimeout: 240,
+      }), context: '',
+    });
+
+    time.tick(15 * 60 * 1000);
+
+    // Мониторинг НЕ приостановлен (это не пользовательское выключение): отказ остаётся зафиксированным
+    expect(vars.sensorFailed).toBe(true);
   });
 });

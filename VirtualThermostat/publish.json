@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/VirtualThermostat.js",
+      "type": "LOGIC",
+      "json": "VirtualThermostat.json",
+      "primary": true
+    }
+  ]
+}

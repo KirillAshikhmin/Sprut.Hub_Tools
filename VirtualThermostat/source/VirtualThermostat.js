@@ -10,7 +10,7 @@ let scenarioDescription = {
 info = {
     name: "🌡️ Виртуальный термостат",
     description: scenarioDescription.ru,
-    version: "3.0",
+    version: "3.1",
     author: "@BOOMikru",
     onStart: true,
 
@@ -56,6 +56,18 @@ info = {
             formType: "list",
             values: servicesList
         },
+        heatingRelayInvert: {
+            name: {
+                en: "    Invert heating relay",
+                ru: "    Инвертировать реле нагрева"
+            },
+            desc: {
+                ru: "Инвертирует управление реле нагрева. При включении нагрева реле отключается, при отключении нагрева — включается. Полезно для нормально-замкнутой проводки (например, сервопривод отопления, который открыт при отсутствии напряжения). Инверсия применяется на физическом уровне ко всем режимам, включая поведение при отказе датчика и при отключении термостата.",
+                en: "Inverts the heating relay control. When heating turns on the relay turns off, when heating turns off the relay turns on. Useful for normally-closed wiring (for example a heating servo that is open with no power). The inversion is applied at the physical level to all modes, including the sensor failure and thermostat off behaviors."
+            },
+            type: "Boolean",
+            value: false
+        },
         coolingRelay: {
             name: {
                 en: "Cooling relay",
@@ -69,6 +81,18 @@ info = {
             value: "",
             formType: "list",
             values: servicesList
+        },
+        coolingRelayInvert: {
+            name: {
+                en: "    Invert cooling relay",
+                ru: "    Инвертировать реле охлаждения"
+            },
+            desc: {
+                ru: "Инвертирует управление реле охлаждения. При включении охлаждения реле отключается, при отключении охлаждения — включается.",
+                en: "Inverts the cooling relay control. When cooling turns on the relay turns off, when cooling turns off the relay turns on."
+            },
+            type: "Boolean",
+            value: false
         },
         thermostatLogic: {
             name: {
@@ -106,6 +130,34 @@ info = {
             maxValue: 5.0,
             minStep: 0.1
         },
+        off: {
+            name: {
+                en: "  THERMOSTAT OFF",
+                ru: "  ОТКЛЮЧЕНИЕ ТЕРМОСТАТА"
+            },
+            type: "String",
+            value: "",
+            formType: "status"
+        },
+        offBehavior: {
+            name: {
+                en: "Thermostat off behavior",
+                ru: "Поведение при отключении термостата"
+            },
+            desc: {
+                ru: "Что делать с реле при отключении термостата — когда он не греет и не охлаждает (Целевой режим Выключено, Вентилятор или Осушитель).\nПоведение применяется ОДИН РАЗ при переходе в отключённое состояние. Пока термостат отключён, сценарий больше не управляет этими реле — ими можно управлять вручную или другой логикой. При возврате в активный режим (Нагрев/Охлаждение/Авто) обычное управление реле восстанавливается.\n• 'Отключить все реле' — оба реле физически выключаются (без учёта инверсии). По умолчанию.\n• 'Включить все реле' — оба реле физически включаются (без учёта инверсии).\n• 'Нагрев' — реле нагрева включается, охлаждения выключается (с учётом инверсии).\n• 'Охлаждение' — реле охлаждения включается, нагрева выключается (с учётом инверсии).",
+                en: "What to do with the relays when the thermostat turns off — when it is neither heating nor cooling (Target state Off, Fan or Dry).\nThe behavior is applied ONCE when entering the off state. While the thermostat is off the scenario no longer controls these relays — they can be controlled manually or by other logic. When returning to an active mode (Heat/Cool/Auto) normal relay control is restored.\n• 'Turn off all relays' — both relays are physically turned off (inversion ignored). Default.\n• 'Turn on all relays' — both relays are physically turned on (inversion ignored).\n• 'Heat' — heating relay on, cooling relay off (inversion applied).\n• 'Cool' — cooling relay on, heating relay off (inversion applied)."
+            },
+            type: "Integer",
+            value: 0,
+            formType: "list",
+            values: [
+                { value: 0, name: { en: "Turn off all relays", ru: "Отключить все реле" } },
+                { value: 1, name: { en: "Turn on all relays", ru: "Включить все реле" } },
+                { value: 2, name: { en: "Heat", ru: "Нагрев" } },
+                { value: 3, name: { en: "Cool", ru: "Охлаждение" } }
+            ]
+        },
         failure: {
             name: {
                 en: "  SENSOR FAILURE",
@@ -121,17 +173,18 @@ info = {
                 ru: "Поведение при отказе датчика температуры"
             },
             desc: {
-                ru: "Что делать с реле и термостатом, если от датчика температуры не поступали данные дольше заданного времени.\n• 'Отключить' — перевести термостат в режим Выключен (Целевой режим = 0) и отключить оба реле.\n• 'Нагрев' — Целевой режим не меняется, включается только реле нагрева.\n• 'Охлаждение' — Целевой режим не меняется, включается только реле охлаждения.\n• 'Ничего не делать' — состояние термостата и реле не трогается.\nПосле восстановления данных с датчика управление реле возвращается в обычный режим.",
-                en: "What to do with the relay and thermostat if no data has been received from the temperature sensor for longer than the specified time.\n• 'Turn off' — switch thermostat to Off (Target state = 0) and turn off both relays.\n• 'Heat' — Target state is not changed, only the heating relay is turned on.\n• 'Cool' — Target state is not changed, only the cooling relay is turned on.\n• 'Do nothing' — thermostat and relay state are not touched.\nAfter sensor data is restored, relay control returns to normal mode."
+                ru: "Что делать с реле и термостатом, если от датчика температуры не поступали данные дольше заданного времени.\n• 'Отключить все' — перевести термостат в режим Выключен (Целевой режим = 0) и отключить оба реле.\n• 'Нагрев' — Целевой режим не меняется, включается только реле нагрева.\n• 'Охлаждение' — Целевой режим не меняется, включается только реле охлаждения.\n• 'Ничего не делать' — состояние термостата и реле не трогается.\n• 'Включить все' — Целевой режим не меняется, включаются оба реле.\nИнверсия реле (если включена) применяется поверх выбранного поведения. После восстановления данных с датчика управление реле возвращается в обычный режим.",
+                en: "What to do with the relay and thermostat if no data has been received from the temperature sensor for longer than the specified time.\n• 'Turn off all' — switch thermostat to Off (Target state = 0) and turn off both relays.\n• 'Heat' — Target state is not changed, only the heating relay is turned on.\n• 'Cool' — Target state is not changed, only the cooling relay is turned on.\n• 'Do nothing' — thermostat and relay state are not touched.\n• 'Turn on all' — Target state is not changed, both relays are turned on.\nRelay inversion (if enabled) is applied on top of the selected behavior. After sensor data is restored, relay control returns to normal mode."
             },
             type: "Integer",
             value: 0,
             formType: "list",
             values: [
-                { value: 0, name: { en: "Turn off", ru: "Отключить" } },
+                { value: 0, name: { en: "Turn off all", ru: "Отключить все" } },
                 { value: 1, name: { en: "Heat", ru: "Нагрев" } },
                 { value: 2, name: { en: "Cool", ru: "Охлаждение" } },
-                { value: 3, name: { en: "Do nothing", ru: "Ничего не делать" } }
+                { value: 3, name: { en: "Do nothing", ru: "Ничего не делать" } },
+                { value: 4, name: { en: "Turn on all", ru: "Включить все" } }
             ]
         },
         failureTimeout: {
@@ -221,7 +274,12 @@ info = {
         // Последний целевой режим, установленный пользователем (не сценарием).
         // При отказе датчика в режиме «Отключить» сценарий сбрасывает TargetHCState в 0,
         // а после восстановления возвращает сюда сохранённое значение.
-        lastUserTargetState: undefined
+        lastUserTargetState: undefined,
+        // Признак того, что «Поведение при отключении термостата» уже применено.
+        // Пока термостат в пассивном режиме (Выключено/Вентилятор/Осушитель), сценарий
+        // применяет offBehavior ОДИН раз и больше не трогает реле. Сбрасывается при
+        // возврате в активный режим.
+        offBehaviorApplied: false
     }
 };
 
@@ -232,13 +290,20 @@ function trigger(source, value, variables, options, context) {
 
         logDebug(`trigger: характеристика ${characteristicType}, значение ${value}, контекст ${context}`, source, options.debug)
 
-        // Запоминаем последний целевой режим, выставленный пользователем (или базовой логикой).
+        // Запоминаем последний целевой режим, выставленный пользователем.
         // Self changes (сценарий сам ставит 0 при отказе) фильтруем — иначе запомним 0.
-        if (characteristicType === HC.TargetHeatingCoolingState && !isSelfChangeByContext(context)) {
-            if (variables.sensorFailed && value !== 0) {
-                logError(`Датчик температуры отказал. Режим будет сброшен в Выключен. После восстановления данных режим вернётся к ${value}.`, source)
-            }
+        const userChangedTarget = characteristicType === HC.TargetHeatingCoolingState && !isSelfChangeByContext(context)
+        if (userChangedTarget) {
             variables.lastUserTargetState = value
+            if (isThermostatActive(value)) {
+                if (variables.sensorFailed) {
+                    logError(`Датчик температуры отказал. Режим будет сброшен в Выключен. После восстановления данных режим вернётся к ${value}.`, source)
+                }
+            } else if (variables.sensorFailed) {
+                // Пользователь выключил термостат — отслеживание отказа датчика приостанавливаем.
+                variables.sensorFailed = false
+                logDebug("Термостат выключен пользователем — отслеживание отказа датчика приостановлено", source, options.debug)
+            }
         }
 
         if (characteristicType === HC.C_FanSpeed) {
@@ -261,6 +326,12 @@ function trigger(source, value, variables, options, context) {
         // Проверка отказа датчика
         startFailureCheckCron(service, variables, options)
 
+        // При включении термостата (переход в активный режим) — немедленная проверка датчика,
+        // чтобы при его недоступности сразу отправить уведомление, не дожидаясь cron.
+        if (userChangedTarget && isThermostatActive(value)) {
+            logDebug("Термостат включён — немедленная проверка датчика", source, options.debug)
+            checkSensorFailure(service, variables, options)
+        }
 
     } catch (e) {
         logError("Ошибка выполнения задачи: " + e.message);
@@ -300,38 +371,45 @@ function handleHeatingCoolingLogic(source, options, variables) {
     }
 
     const service = source.getService()
-    const heatingRelay = getDevice(options, "heatingRelay")
-    const coolingRelay = getDevice(options, "coolingRelay")
 
     const currentStateChar = service.getCharacteristic(HC.CurrentHeatingCoolingState)
     const targetStateChar = service.getCharacteristic(HC.TargetHeatingCoolingState)
     const currentState = currentStateChar ? currentStateChar.getValue() : 0
     const targetState = targetStateChar ? targetStateChar.getValue() : 0
 
-    // Выключено / Вентилятор / Осушитель — оба реле выкл
-    if (targetState == 0 || targetState == -1 || targetState == -2) {
-        logDebug(`Целевой режим ${targetState} (Off/Fan/Dry) — отключаем оба реле`, source, options.debug)
-        setRelayValue(heatingRelay, false, source, options.debug)
-        setRelayValue(coolingRelay, false, source, options.debug)
+    // Выключено / Вентилятор / Осушитель — применяем «Поведение при отключении термостата».
+    // Применяем один раз при входе в отключённое состояние, дальше реле не трогаем.
+    if (isThermostatOff(targetState)) {
+        if (variables && variables.offBehaviorApplied) {
+            logDebug(`Термостат отключён (target=${targetState}) — поведение уже применено, реле не трогаем`, source, options.debug)
+            return
+        }
+        logDebug(`Целевой режим ${targetState} (Off/Fan/Dry) — поведение при отключении: ${describeOffBehavior(options.offBehavior)}`, source, options.debug)
+        applyOffBehavior(options.offBehavior, options, source)
+        if (variables) variables.offBehaviorApplied = true
         return
     }
+
+    // Активный режим — снимаем признак отключения, обычное управление реле восстанавливается
+    if (variables) variables.offBehaviorApplied = false
+
     // Дальше решает CurrentHeatingCoolingState (значения 0/1/2)
     if (currentState == 1) {
         logDebug(`Текущий режим = Нагрев → реле нагрева ON, охлаждения OFF`, source, options.debug)
-        setRelayValue(heatingRelay, true, source, options.debug)
-        setRelayValue(coolingRelay, false, source, options.debug)
+        setHeatingRelay(true, source, options)
+        setCoolingRelay(false, source, options)
         return
     }
     if (currentState == 2) {
         logDebug(`Текущий режим = Охлаждение → реле охлаждения ON, нагрева OFF`, source, options.debug)
-        setRelayValue(heatingRelay, false, source, options.debug)
-        setRelayValue(coolingRelay, true, source, options.debug)
+        setHeatingRelay(false, source, options)
+        setCoolingRelay(true, source, options)
         return
     }
-    // currentState == 0
+    // currentState == 0 — зона комфорта в активном режиме → оба реле OFF
     logDebug(`Текущий режим = Выключен (target=${targetState}) → оба реле OFF`, source, options.debug)
-    setRelayValue(heatingRelay, false, source, options.debug)
-    setRelayValue(coolingRelay, false, source, options.debug)
+    setHeatingRelay(false, source, options)
+    setCoolingRelay(false, source, options)
 }
 
 // Вычисляет CurrentHeatingCoolingState (0/1/2) по целевому режиму и температурам с гистерезисом.
@@ -356,9 +434,9 @@ function computeAndSetCurrentState(service, options) {
 
     const hysteresis = options.hysteresis != null ? options.hysteresis : 0.5
     logDebug(`Эмуляция: target=${targetState}, current=${currentState}, temp=${currentTemp}°C, h=${hysteresis}`, currentStateChar, options.debug)
-    const next = decideCurrentState(service, targetState, currentState, currentTemp, hysteresis)
+    const next = decideCurrentState(service, targetState, currentTemp, hysteresis)
     if (next == null) {
-        logDebug("Эмуляция термостата: решение не принято (неизвестный режим)", currentStateChar, options.debug)
+        logDebug("Эмуляция термостата: состояние не меняем (мёртвая зона или режим без управления)", currentStateChar, options.debug)
         return undefined
     }
     if (next !== currentState) {
@@ -370,62 +448,82 @@ function computeAndSetCurrentState(service, options) {
     return next
 }
 
-// Вычисляет следующее значение CurrentHeatingCoolingState. Без побочных эффектов.
-function decideCurrentState(service, targetState, currentState, currentTemp, hysteresis) {
-    // OFF / FAN_ONLY / DRY → текущий режим всегда Выключен
-    if (targetState == 0 || targetState == -1 || targetState == -2) return 0
+// Вычисляет следующее значение CurrentHeatingCoolingState по эталонной логике штатного
+// сценария «Обычный термостат» (GenericThermostat). Без побочных эффектов.
+// Возвращает 0/1/2 — новое значение, либо null — оставить текущее значение без изменений.
+// Коды режимов: OFF=0, HEAT=1, COOL=2, AUTO=3, ECO=-3, FAN_ONLY=-1, DRY=-2.
+//
+// Гистерезис «держится» в самой характеристике: в мёртвой зоне функция возвращает null,
+// поэтому текущий режим (нагрев/охлаждение/выкл) сохраняется до выхода из зоны.
+function decideCurrentState(service, targetState, currentTemp, hysteresis) {
+    // OFF — всегда выключаем
+    if (targetState == 0) return 0
 
-    // HEAT / ECO → используется TargetTemperature
-    if (targetState == 1 || targetState == -3) {
-        const targetTemp = getCharValue(service, HC.TargetTemperature)
-        if (targetTemp == null) return 0
-        // Сейчас греем — выключаем, когда нагрелись выше target+hysteresis
-        if (currentState == 1) return currentTemp >= targetTemp + hysteresis ? 0 : 1
-        // Иначе — включаем нагрев, когда температура опустилась ниже target-hysteresis
-        return currentTemp <= targetTemp - hysteresis ? 1 : 0
-    }
+    const deadband = hysteresis
+    const targetTemp = getCharValue(service, HC.TargetTemperature)
 
-    // COOL → используется TargetTemperature
+    // COOL — по Целевой температуре. Выключаем при достижении цели, включаем при перегреве на гистерезис.
     if (targetState == 2) {
-        const targetTemp = getCharValue(service, HC.TargetTemperature)
-        if (targetTemp == null) return 0
-        if (currentState == 2) return currentTemp <= targetTemp - hysteresis ? 0 : 2
-        return currentTemp >= targetTemp + hysteresis ? 2 : 0
+        if (targetTemp == null) return null
+        if (currentTemp <= targetTemp) return 0
+        if (currentTemp - targetTemp >= deadband) return 2
+        return null // мёртвая зона — состояние не меняем
     }
 
-    // AUTO → используются HeatingThresholdTemperature и CoolingThresholdTemperature.
-    // Если у термостата этих порогов нет — фолбэк на TargetTemperature (используется как обе точки).
+    // HEAT — симметрично COOL.
+    if (targetState == 1) {
+        if (targetTemp == null) return null
+        if (currentTemp >= targetTemp) return 0
+        if (targetTemp - currentTemp >= deadband) return 1
+        return null // мёртвая зона — состояние не меняем
+    }
+
+    // AUTO — по Порогам охлаждения/нагрева. Если хотя бы одного порога нет — по Целевой температуре.
     if (targetState == 3) {
-        let heatThr = getCharValue(service, HC.HeatingThresholdTemperature)
-        let coolThr = getCharValue(service, HC.CoolingThresholdTemperature)
-        if (heatThr == null && coolThr == null) {
-            const targetTemp = getCharValue(service, HC.TargetTemperature)
-            if (targetTemp == null) return 0
-            heatThr = targetTemp
-            coolThr = targetTemp
+        const coolThr = getCharValue(service, HC.CoolingThresholdTemperature)
+        const heatThr = getCharValue(service, HC.HeatingThresholdTemperature)
+        if (coolThr == null || heatThr == null) {
+            if (targetTemp == null) return null
+            if (currentTemp - targetTemp >= deadband) return 2
+            if (targetTemp - currentTemp >= deadband) return 1
+            return 0
         }
-        // Если в текущий момент уже греем — выключаемся при достижении heatThr+hysteresis
-        if (currentState == 1) {
-            if (heatThr != null && currentTemp >= heatThr + hysteresis) return 0
-            return 1
-        }
-        // Если уже охлаждаем — выключаемся при достижении coolThr-hysteresis
-        if (currentState == 2) {
-            if (coolThr != null && currentTemp <= coolThr - hysteresis) return 0
-            return 2
-        }
-        // Из OFF включаем нагрев или охлаждение при выходе за пороги
-        if (heatThr != null && currentTemp <= heatThr - hysteresis) return 1
-        if (coolThr != null && currentTemp >= coolThr + hysteresis) return 2
+        if (currentTemp - coolThr >= deadband) return 2
+        if (heatThr - currentTemp >= deadband) return 1
         return 0
     }
 
+    // ECO (-3), FAN_ONLY (-1), DRY (-2) и прочие режимы штатная логика не обрабатывает —
+    // CurrentHeatingCoolingState остаётся без изменений.
     return null
 }
 
 function getCharValue(service, type) {
     const c = service.getCharacteristic(type)
     return c ? c.getValue() : null
+}
+
+// Термостат выключен / не управляет климатом (пассивный режим): Выключено / Вентилятор / Осушитель.
+function isThermostatOff(targetState) {
+    return targetState == 0 || targetState == -1 || targetState == -2
+}
+// Термостат в активном режиме (греет/охлаждает): Нагрев / Охлаждение / Авто / Эко.
+function isThermostatActive(targetState) {
+    return !isThermostatOff(targetState)
+}
+
+// Выключен ли термостат самим пользователем (для приостановки отслеживания отказа датчика).
+// Опираемся на последний выбранный пользователем режим, а не на «живой» Целевой режим:
+// при failureBehavior=0 сценарий сам ставит Целевой режим в 0, но это не «пользователь выключил».
+// Если пользовательский выбор неизвестен (например, после перезагрузки) — берём текущий режим.
+function isThermostatOffByUser(service, variables) {
+    let target
+    if (variables && variables.lastUserTargetState != null) {
+        target = variables.lastUserTargetState
+    } else {
+        target = getCharValue(service, HC.TargetHeatingCoolingState)
+    }
+    return isThermostatOff(target)
 }
 
 function subscribeToTemperatureSensor(source, service, variables, options, context) {
@@ -492,20 +590,34 @@ function subscribeToRelayState(service, variables, options) {
     }
 }
 
-function setRelayValue(relay, value, source, debug) {
+// Устанавливает реле нагрева в логическое состояние value (с учётом инверсии).
+function setHeatingRelay(value, source, options) {
+    setRelayValue(getDevice(options, "heatingRelay"), value, source, options.debug, options.heatingRelayInvert === true)
+}
+
+// Устанавливает реле охлаждения в логическое состояние value (с учётом инверсии).
+function setCoolingRelay(value, source, options) {
+    setRelayValue(getDevice(options, "coolingRelay"), value, source, options.debug, options.coolingRelayInvert === true)
+}
+
+// value — логическое состояние (нужно ли «включить нагрев/охлаждение»).
+// invert=true — записать на реле инвертированное значение (нормально-замкнутая проводка).
+function setRelayValue(relay, value, source, debug, invert) {
     if (!relay) return
 
     try {
         const onChar = relay.getCharacteristic(HC.On)
+        const physical = invert === true ? !value : value
         const relayAccessory = relay.getAccessory()
         const status = relayAccessory.getService(HS.AccessoryInformation).getCharacteristic(HC.C_Online).getValue() == true
         if (!status)
             logError(`Реле ${getDeviceName(relay)} не в сети`, source)
         const prev = onChar.getValue()
-        if (prev !== value) {
-            logDebug(`Реле ${getDeviceName(relay)}: ${prev} → ${value}`, source, debug)
+        if (prev !== physical) {
+            const invertNote = invert === true ? ` (инверсия, логически ${value})` : ``
+            logDebug(`Реле ${getDeviceName(relay)}: ${prev} → ${physical}${invertNote}`, source, debug)
         }
-        onChar.setValue(value)
+        onChar.setValue(physical)
     } catch (e) {
         logError(`Ошибка при установке значения реле ${getDeviceName(relay)}: ${e.toString()}`, source)
     }
@@ -622,7 +734,76 @@ function describeFailureBehavior(behavior) {
     if (behavior == 1) return "включаем реле нагрева"
     if (behavior == 2) return "включаем реле охлаждения"
     if (behavior == 3) return "состояние не меняем"
+    if (behavior == 4) return "включаем оба реле"
     return "отключаем термостат и реле"
+}
+
+// Применяет состояние реле по выбранному поведению при отказе датчика.
+// Целевой режим термостата НЕ трогает.
+// 0 — Отключить все: оба реле OFF (с учётом инверсии).
+// 1 — Нагрев: реле нагрева ON, охлаждения OFF (с учётом инверсии).
+// 2 — Охлаждение: реле нагрева OFF, охлаждения ON (с учётом инверсии).
+// 3 — Ничего не делать: реле не трогаем.
+// 4 — Включить все: оба реле ON (с учётом инверсии).
+function applyRelayBehavior(behavior, options, source) {
+    if (behavior == 3) return
+    if (behavior == 1) {
+        setHeatingRelay(true, source, options)
+        setCoolingRelay(false, source, options)
+        return
+    }
+    if (behavior == 2) {
+        setHeatingRelay(false, source, options)
+        setCoolingRelay(true, source, options)
+        return
+    }
+    if (behavior == 4) {
+        setHeatingRelay(true, source, options)
+        setCoolingRelay(true, source, options)
+        return
+    }
+    // 0 — Отключить все
+    setHeatingRelay(false, source, options)
+    setCoolingRelay(false, source, options)
+}
+
+// Описание «Поведения при отключении термостата» для логов.
+function describeOffBehavior(behavior) {
+    if (behavior == 1) return "включить все реле (физически)"
+    if (behavior == 2) return "реле нагрева ON, охлаждения OFF"
+    if (behavior == 3) return "реле охлаждения ON, нагрева OFF"
+    return "отключить все реле (физически)"
+}
+
+// Применяет «Поведение при отключении термостата».
+// 0 — Отключить все реле: оба реле физически OFF (без учёта инверсии).
+// 1 — Включить все реле: оба реле физически ON (без учёта инверсии).
+// 2 — Нагрев: реле нагрева ON, охлаждения OFF (с учётом инверсии).
+// 3 — Охлаждение: реле нагрева OFF, охлаждения ON (с учётом инверсии).
+function applyOffBehavior(behavior, options, source) {
+    const heatingRelay = getDevice(options, "heatingRelay")
+    const coolingRelay = getDevice(options, "coolingRelay")
+    if (behavior == 1) {
+        // Включить все реле — физически, без инверсии
+        setRelayValue(heatingRelay, true, source, options.debug, false)
+        setRelayValue(coolingRelay, true, source, options.debug, false)
+        return
+    }
+    if (behavior == 2) {
+        // Нагрев — логически, с учётом инверсии
+        setHeatingRelay(true, source, options)
+        setCoolingRelay(false, source, options)
+        return
+    }
+    if (behavior == 3) {
+        // Охлаждение — логически, с учётом инверсии
+        setHeatingRelay(false, source, options)
+        setCoolingRelay(true, source, options)
+        return
+    }
+    // 0 — Отключить все реле — физически, без инверсии
+    setRelayValue(heatingRelay, false, source, options.debug, false)
+    setRelayValue(coolingRelay, false, source, options.debug, false)
 }
 
 // Нормализует failureTimeout: минимум 15 мин, кратность 15
@@ -633,11 +814,9 @@ function getFailureTimeoutMinutes(options) {
     return minutes
 }
 
-// Применяет поведение при отказе датчика.
-// 0 — Отключить: TargetHCState=0, оба реле OFF.
-// 1 — Нагрев: оставить TargetHCState как есть, реле нагрева ON, реле охлаждения OFF.
-// 2 — Охлаждение: оставить TargetHCState как есть, реле нагрева OFF, реле охлаждения ON.
-// 3 — Ничего не делать: ни реле, ни режим не трогаем.
+// Применяет поведение при отказе датчика (значения см. опцию failureBehavior).
+// Отличается от applyRelayBehavior только режимом 0 — «Отключить все»: дополнительно
+// переводит термостат в Выключен (TargetHCState=0) как безопасное состояние.
 function applyFailureBehavior(service, options, source) {
     const behavior = options.failureBehavior
     if (behavior == 3) {
@@ -645,31 +824,17 @@ function applyFailureBehavior(service, options, source) {
         return
     }
 
-    const heatingRelay = getDevice(options, "heatingRelay")
-    const coolingRelay = getDevice(options, "coolingRelay")
+    logDebug(`Отказ датчика: ${describeFailureBehavior(behavior)}`, source, options.debug)
 
-    if (behavior == 1) {
-        logDebug("Отказ датчика: режим 'Нагрев' — реле нагрева ON, охлаждения OFF (целевой режим не меняем)", source, options.debug)
-        setRelayValue(heatingRelay, true, source, options.debug)
-        setRelayValue(coolingRelay, false, source, options.debug)
-        return
+    // 0 — Отключить все: дополнительно переводим термостат в OFF (безопасное состояние)
+    if (behavior != 1 && behavior != 2 && behavior != 4) {
+        const targetChar = service ? service.getCharacteristic(HC.TargetHeatingCoolingState) : null
+        if (targetChar && targetChar.getValue() !== 0) {
+            targetChar.setValue(0)
+        }
     }
 
-    if (behavior == 2) {
-        logDebug("Отказ датчика: режим 'Охлаждение' — реле охлаждения ON, нагрева OFF (целевой режим не меняем)", source, options.debug)
-        setRelayValue(heatingRelay, false, source, options.debug)
-        setRelayValue(coolingRelay, true, source, options.debug)
-        return
-    }
-
-    // 0 — Отключить: целевой режим в OFF + оба реле OFF
-    logDebug("Отказ датчика: режим 'Отключить' — TargetHCState=0, оба реле OFF", source, options.debug)
-    const targetChar = service ? service.getCharacteristic(HC.TargetHeatingCoolingState) : null
-    if (targetChar && targetChar.getValue() !== 0) {
-        targetChar.setValue(0)
-    }
-    setRelayValue(heatingRelay, false, source, options.debug)
-    setRelayValue(coolingRelay, false, source, options.debug)
+    applyRelayBehavior(behavior, options, source)
 }
 
 // Восстановление после отказа датчика.
@@ -701,8 +866,19 @@ function checkSensorFailure(service, variables, options) {
     try {
         if (!options.sensor || options.sensor === '') return
         if (!service) return
-        const timeoutMs = getFailureTimeoutMinutes(options) * 60 * 1000
         const sensorChar = service.getCharacteristic(HC.CurrentTemperature)
+
+        // Термостат выключен пользователем — отказ датчика не отслеживаем: не уведомляем
+        // и реле не трогаем. Если ранее был зафиксирован отказ — тихо снимаем флаг.
+        if (isThermostatOffByUser(service, variables)) {
+            if (variables.sensorFailed) {
+                variables.sensorFailed = false
+                logDebug("Термостат выключен — отслеживание отказа датчика приостановлено", sensorChar, options.debug)
+            }
+            return
+        }
+
+        const timeoutMs = getFailureTimeoutMinutes(options) * 60 * 1000
         if (!variables.lastUpdateTime) {
             // Если ни одного обновления не было — отсчитываем от запуска
             variables.lastUpdateTime = Date.now()

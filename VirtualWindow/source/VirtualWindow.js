@@ -1,4 +1,4 @@
-let servicesList = getServicesByServiceAndCharacteristicType([HS.Switch, HS.Outlet], HC.On);
+let servicesList = getServicesByServiceAndCharacteristicType([HS.Switch, HS.Outlet], [HC.On]);
 
 info = {
     name: "🪟 Виртуальное окно/штора",
@@ -50,7 +50,7 @@ info = {
 };
 
 // Вывод в лог информационные сообщения о работе сценария
-let debug = false
+let debug = true
 
 function trigger(source, value, variables, options) {
     try {
@@ -180,24 +180,23 @@ function getDeviceName(service) {
 }
 
 // подготовка списка характеристик для выбора в настройке логики
-function getServicesByServiceAndCharacteristicType(serviceTypes, characteristicType) {
-    let sortedServicesList = []
-    let unsortedServicesList = []
+function getServicesByServiceAndCharacteristicType(serviceTypes, characteristicTypes) {
+    let unsortedServicesList = [];
     Hub.getAccessories().forEach((a) => {
-        a.getServices().filter((s) => serviceTypes.indexOf(s.getType()) >= 0).forEach((s) => {
-            const c = s.getCharacteristic(characteristicType);
-            if (c) {
-                let displayname = getDeviceName(s)
+        a.getServices()
+            .filter((s) => serviceTypes.indexOf(s.getType()) >= 0)
+            .filter((s) => characteristicTypes.some((c) => s.getCharacteristic(c)))
+            .forEach((s) => {
+                let name = getDeviceName(s);
                 unsortedServicesList.push({
-                    name: { ru: displayname, en: displayname },
+                    name: { ru: name, en: name },
                     value: s.getUUID()
                 });
-            }
-        })
+            });
     });
-    sortedServicesList.push({ name: { ru: "Не выбрано", en: "Not selected" }, value: '' })
-    unsortedServicesList.sort((a, b) => a.name.ru.localeCompare(b.name.ru)).forEach((s) => sortedServicesList.push(s))
-    return sortedServicesList
+    let sortedServicesList = [{ name: { ru: "Не выбрано", en: "Not selected" }, value: '' }];
+    unsortedServicesList.sort((a, b) => a.name.ru.localeCompare(b.name.ru)).forEach((s) => sortedServicesList.push(s));
+    return sortedServicesList;
 }
 
 // Константа для отладки

@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/WinterSummer.js",
+      "type": "LOGIC",
+      "json": "WinterSummer.json",
+      "primary": true
+    }
+  ]
+}

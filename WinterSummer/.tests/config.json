@@ -1,0 +1,15 @@
+{
+  "$schema": "../../ScenarioSimulator/schemas/config.schema.json",
+  "name": "WinterSummer",
+  "scenario": {
+    "globals": [],
+    "logic": ["../source/WinterSummer.js"]
+  },
+  "tests": ["*.test.js"],
+  "execution": {
+    "timeoutMs": 5000,
+    "strictMode": "off",
+    "encoding": "utf-8",
+    "isolation": "per-test"
+  }
+}

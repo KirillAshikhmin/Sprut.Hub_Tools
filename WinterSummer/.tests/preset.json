@@ -1,0 +1,45 @@
+{
+  "name": "Зима/Лето — сезонное отопление",
+  "description": "Выключатель отопления, который сценарий автоматически включает зимой (с 1 декабря по 1 марта) и выключает летом. Логика сценария висит на сервисе Switch.",
+  "options": {
+    "startDate": "1.12",
+    "endDate": "1.03",
+    "changeServiceName": false,
+    "invert": false
+  },
+  "variables": {},
+  "rooms": [
+    {
+      "name": "Гостиная"
+    }
+  ],
+  "accessories": [
+    {
+      "id": 100,
+      "name": "Выключатель отопления",
+      "room": "Гостиная",
+      "target": true,
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [
+            {
+              "type": "C_Online",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "Switch",
+          "name": "Отопление",
+          "characteristics": [
+            {
+              "type": "On",
+              "value": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

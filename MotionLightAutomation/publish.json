@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/MotionLightAutomation.js",
+      "type": "LOGIC",
+      "json": "MotionLightAutomation.json",
+      "primary": true
+    }
+  ]
+}

@@ -12,6 +12,7 @@
     "maxAmbientLux": 50,
     "gateAutoSwitch": "",
     "gateAutoSwitchInvert": false,
+    "gateBlocksManualInputs": false,
     "noAutoOffWhenManualOn": false,
     "noAutoOnAfterManualOff": false,
     "ignoreManualWithin5sAfterSensorOn": true,

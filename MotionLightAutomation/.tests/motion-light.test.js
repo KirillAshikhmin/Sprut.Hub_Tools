@@ -75,7 +75,7 @@ function baseOptions(overrides) {
     motion1: '', motion2: '', motion3: '',
     manualControl1: '', manualControl2: '', manualControl3: '',
     luxSensor: '', maxAmbientLux: 50,
-    gateAutoSwitch: '', gateAutoSwitchInvert: false,
+    gateAutoSwitch: '', gateAutoSwitchInvert: false, gateBlocksManualInputs: false,
     noAutoOffWhenManualOn: false,
     noAutoOnAfterManualOff: false,
     ignoreManualWithin5sAfterSensorOn: true,

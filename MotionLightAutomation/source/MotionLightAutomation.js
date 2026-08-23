@@ -21,7 +21,7 @@ const scenarioDescription = {
 info = {
     name: scenarioName.ru,
     description: scenarioDescription.ru,
-    version: "1.0",
+    version: "1.1",
     author: "@BOOMikru",
     onStart: true,
 
@@ -192,35 +192,9 @@ function handleExternalCharacteristicEvent(src, val, variables, options) {
     }
 
     if (isManualControlOption(options, uuid)) {
-        if (st === HS.Switch && ct === HC.On) {
-            if (val === true) {
-                logInfo("Ручной выключатель ВКЛ — включаю лампу", src, options.debug);
-                manualTurnOn(variables, options, src);
-            } else if (isAnyManualSwitchOn(options, uuid)) {
-                logInfo("Ручной выключатель ВЫКЛ, но другой ручной выключатель ещё ВКЛ — лампа остаётся включённой", src, options.debug);
-            } else {
-                logInfo("Ручной выключатель ВЫКЛ — выключаю лампу", src, options.debug);
-                variables.manualHold = false;
-                variables.lastSensorAutoOnAt = undefined;
-                clearOffTimer(variables, options, src);
-                clearManualHoldSafetyTimer(variables, options, src);
-                setLightOn(variables.cachedLightService, false, options, src);
-            }
-            return;
-        }
-        if (st === HS.ContactSensor && ct === HC.ContactSensorState && val === 1) {
-            logInfo("Ручной контакт «Открытие» — переключаю лампу", src, options.debug);
-            manualToggleFromButtonOrPulse(variables, options, src);
-            return;
-        }
-        if (st === HS.StatelessProgrammableSwitch && ct === HC.ProgrammableSwitchEvent && val === 0) {
-            logInfo("Ручная кнопка (нажатие) — переключаю лампу", src, options.debug);
-            manualToggleFromButtonOrPulse(variables, options, src);
-            return;
-        }
-        if (st === HS.C_PulseMeter && ct === HC.C_PulseCount && val > 0) {
-            logInfo("Ручной импульс — переключаю лампу", src, options.debug);
-            manualToggleFromButtonOrPulse(variables, options, src);
+        if (isManualInputBlockedByGate(options)) {
+            logInfo("Ручной вход проигнорирован: выключатель «Разрешение автоматики» запрещает автоматику (опция «Также не реагировать на ручные входы»)", src, options.debug);
+        } else if (handleManualControlEvent(src, uuid, val, st, ct, variables, options)) {
             return;
         }
     }
@@ -229,6 +203,44 @@ function handleExternalCharacteristicEvent(src, val, variables, options) {
         logInfo("Датчик активности сработал: " + (isSensorActiveValue(st, val) ? "активность" : "нет активности"), src, options.debug);
         applyOccupancyState(variables, options, src);
     }
+}
+
+// Обрабатывает событие ручного входа. Возвращает true, если событие относится к
+// ручному управлению и обработано; false — если тип события к ручному управлению
+// не относится (тогда событие идёт дальше, например в ветку датчиков активности).
+function handleManualControlEvent(src, uuid, val, st, ct, variables, options) {
+    if (st === HS.Switch && ct === HC.On) {
+        if (val === true) {
+            logInfo("Ручной выключатель ВКЛ — включаю лампу", src, options.debug);
+            manualTurnOn(variables, options, src, true);
+        } else if (isAnyManualSwitchOn(options, uuid)) {
+            logInfo("Ручной выключатель ВЫКЛ, но другой ручной выключатель ещё ВКЛ — лампа остаётся включённой", src, options.debug);
+        } else {
+            logInfo("Ручной выключатель ВЫКЛ — выключаю лампу", src, options.debug);
+            variables.manualHold = false;
+            variables.lastSensorAutoOnAt = undefined;
+            clearOffTimer(variables, options, src);
+            clearManualHoldSafetyTimer(variables, options, src);
+            setLightOn(variables.cachedLightService, false, options, src);
+        }
+        return true;
+    }
+    if (st === HS.ContactSensor && ct === HC.ContactSensorState && val === 1) {
+        logInfo("Ручной контакт «Открытие» — переключаю лампу", src, options.debug);
+        manualToggleFromButtonOrPulse(variables, options, src);
+        return true;
+    }
+    if (st === HS.StatelessProgrammableSwitch && ct === HC.ProgrammableSwitchEvent && val === 0) {
+        logInfo("Ручная кнопка (нажатие) — переключаю лампу", src, options.debug);
+        manualToggleFromButtonOrPulse(variables, options, src);
+        return true;
+    }
+    if (st === HS.C_PulseMeter && ct === HC.C_PulseCount && val > 0) {
+        logInfo("Ручной импульс — переключаю лампу", src, options.debug);
+        manualToggleFromButtonOrPulse(variables, options, src);
+        return true;
+    }
+    return false;
 }
 
 // Ручное выключение света при активных датчиках: при включённой опции
@@ -303,7 +315,7 @@ function manualToggleFromButtonOrPulse(variables, options, logSource) {
     }
     if (!isLightCurrentlyOn(variables)) {
         logInfo("Переключение вручную: лампа была выключена — включаю", logSource, options.debug);
-        manualTurnOn(variables, options, logSource);
+        manualTurnOn(variables, options, logSource, false);
         return;
     }
     logInfo("Переключение вручную: лампа была включена — выключаю", logSource, options.debug);
@@ -319,15 +331,19 @@ function manualTurnOffFromButtonOrPulse(variables, options, logSource) {
     setLightOn(variables.cachedLightService, false, options, logSource);
 }
 
-function manualTurnOn(variables, options, logSource) {
+// fromManualSwitch — включение пришло от ручного входа типа «Выключатель».
+// Такое включение НЕ активирует режим «ручное удержание»: это самостоятельный
+// механизм — пока выключатель в On, свет и так не гасят ни обычный, ни защитный
+// таймер (все они проверяют isAnyManualSwitchOn).
+function manualTurnOn(variables, options, logSource, fromManualSwitch) {
     clearOffTimer(variables, options, logSource);
     clearManualHoldSafetyTimer(variables, options, logSource);
     variables.lastSensorAutoOnAt = undefined;
     releaseManualOffLock(variables, options, logSource);
     const switchHold = isAnyManualSwitchOn(options);
-    if (switchHold) {
-        variables.manualHold = true;
-        logInfo("Ручное удержание ВКЛ: ручной выключатель в On — свет следует за выключателем", logSource, options.debug);
+    if (fromManualSwitch === true) {
+        variables.manualHold = false;
+        logInfo("Свет следует за ручным выключателем — таймеры выключения не действуют, пока он в On", logSource, options.debug);
     } else if (options.noAutoOffWhenManualOn === true) {
         variables.manualHold = true;
         logInfo("Ручное удержание ВКЛ: опция «не гасить после ручного включения»", logSource, options.debug);
@@ -426,6 +442,14 @@ function isAutoAutomationAllowed(options) {
     const invert = options.gateAutoSwitchInvert === true;
     const gateIsOn = svc.getCharacteristic(HC.On).getValue() === true;
     return invert ? !gateIsOn : gateIsOn;
+}
+
+// Ручные входы (выключатели, кнопки, импульсы, контакты) игнорируются целиком,
+// если включена опция «Также не реагировать на ручные входы» и выключатель
+// «Разрешение автоматики» сейчас запрещает автоматику. Если разрешающий
+// выключатель не выбран — блокировки нет.
+function isManualInputBlockedByGate(options) {
+    return options.gateBlocksManualInputs === true && !isAutoAutomationAllowed(options);
 }
 
 // Активное значение датчика активности: движение=true, присутствие=1, контакт «Открыто»=1.
@@ -691,79 +715,118 @@ function isSelfChanged(context) {
         elements[2] === elements[0];
 }
 
-function getDeviceName(service) {
+// accessory можно передать явно, чтобы не звать service.getAccessory() повторно
+// (в горячем цикле аксессуар уже на руках). Без него — берём из сервиса.
+function getDeviceName(service, accessory) {
     if (!service) {
         return "";
     }
-    const acc = service.getAccessory();
-    const room = acc.getRoom().getName();
-    const accName = acc.getName();
-    const sName = service.getName();
-    return room + " -> " + (accName === sName ? accName : accName + " " + sName) + " (" + service.getUUID() + ")";
+    const acc = accessory || service.getAccessory();
+    return buildDeviceName(acc.getRoom().getName(), acc.getName(), service.getName(), service.getUUID());
 }
 
-// Собирает несколько списков сервисов за ОДИН проход по всем аксессуарам хаба.
-// `buckets` — { имя_списка: [ { serviceTypes: [...], characteristicTypes: [...] }, ... ] }.
-// Сервис попадает в список, если совпадает хотя бы с одним подбакетом: его тип входит
-// в serviceTypes и у него есть хотя бы одна характеристика из characteristicTypes.
-// Возвращает { имя_списка: [{ name: {ru,en}, value }, ...] } с заголовком "Не выбрано".
-function collectServicesByBuckets(buckets) {
-    const names = Object.keys(buckets);
-    const unsorted = {};
-    const seen = {};
-    names.forEach(n => {
-        unsorted[n] = [];
-        seen[n] = {};
-    });
+// Формат отображаемого имени в одном месте: "Комната -> Имя [Сервис] (uuid)".
+// Если имя сервиса совпадает с именем аксессуара — сервис не дублируем.
+function buildDeviceName(roomName, accName, serviceName, uuid) {
+    const label = accName === serviceName ? accName : accName + " " + serviceName;
+    return roomName + " -> " + label + " (" + uuid + ")";
+}
 
-    Hub.getAccessories().forEach(a => {
-        a.getServices().forEach(s => {
-            const st = s.getType();
-            const uuid = s.getUUID();
-            names.forEach(n => {
-                if (seen[n][uuid]) return;
-                const matched = buckets[n].some(sub =>
-                    sub.serviceTypes.indexOf(st) >= 0 &&
-                    sub.characteristicTypes.some(c => s.getCharacteristic(c))
-                );
-                if (!matched) return;
-                seen[n][uuid] = true;
-                const dname = getDeviceName(s);
-                unsorted[n].push({name: {ru: dname, en: dname}, value: uuid});
-            });
-        });
-    });
+// Компаратор опций по русскому имени. Вынесен наверх, чтобы не создавать
+// функцию в цикле (память).
+function compareOptionByRuName(a, b) {
+    return a.name.ru.localeCompare(b.name.ru);
+}
+
+// Собирает несколько списков сервисов за ОДИН проход по аксессуарам хаба.
+// `typesByList` — { имя_списка: [HS.Тип, ...] }. Сервис попадает в список, если
+// его тип входит в набор этого списка. Характеристики не проверяем: нужные
+// характеристики обязательны (required) для своих типов сервисов, поэтому наличие
+// типа гарантирует наличие характеристики.
+// Возвращает { имя_списка: [{ name: {ru,en}, value }, ...] } с заголовком "Не выбрано".
+//
+// Оптимизировано под память: функция обходит ВСЕ сервисы ВСЕХ аксессуаров хаба,
+// поэтому в горячем цикле нет ни обёрток характеристик (getCharacteristic), ни
+// замыканий (forEach/some). Поиск списков по типу — O(1) через Map.
+function collectServicesByTypes(typesByList) {
+    const listNames = Object.keys(typesByList);
+
+    // Обратный индекс «тип сервиса -> имена списков». Map, т.к. ключ — значение
+    // HS.* (сравнивается по идентичности с тем, что вернёт getType()).
+    const listsForType = new Map();
+    for (let li = 0; li < listNames.length; li++) {
+        const types = typesByList[listNames[li]];
+        for (let ti = 0; ti < types.length; ti++) {
+            const bucket = listsForType.get(types[ti]);
+            if (bucket) {
+                bucket.push(listNames[li]);
+            } else {
+                listsForType.set(types[ti], [listNames[li]]);
+            }
+        }
+    }
+
+    const collected = {};
+    const seen = {};
+    for (let n = 0; n < listNames.length; n++) {
+        collected[listNames[n]] = [];
+        seen[listNames[n]] = {};
+    }
+
+    const accessories = Hub.getAccessories();
+    for (let ai = 0; ai < accessories.length; ai++) {
+        const accessory = accessories[ai];
+        const services = accessory.getServices();
+        // Комната и имя аксессуара одни на все его сервисы — считаем лениво один раз.
+        let roomName = "";
+        let accName = "";
+        let accResolved = false;
+        for (let si = 0; si < services.length; si++) {
+            const svc = services[si];
+            const lists = listsForType.get(svc.getType());
+            if (!lists) {
+                continue;
+            }
+            const uuid = svc.getUUID();
+            let dname = null;
+            for (let k = 0; k < lists.length; k++) {
+                const ln = lists[k];
+                if (seen[ln][uuid]) {
+                    continue;
+                }
+                seen[ln][uuid] = true;
+                if (dname === null) {
+                    if (!accResolved) {
+                        roomName = accessory.getRoom().getName();
+                        accName = accessory.getName();
+                        accResolved = true;
+                    }
+                    dname = buildDeviceName(roomName, accName, svc.getName(), uuid);
+                }
+                collected[ln].push({name: {ru: dname, en: dname}, value: uuid});
+            }
+        }
+    }
 
     const out = {};
-    names.forEach(n => {
+    for (let oi = 0; oi < listNames.length; oi++) {
+        const nm = listNames[oi];
+        collected[nm].sort(compareOptionByRuName);
         const sorted = [{name: {ru: "Не выбрано", en: "Not selected"}, value: ""}];
-        unsorted[n]
-            .sort((x, y) => x.name.ru.localeCompare(y.name.ru))
-            .forEach(s => sorted.push(s));
-        out[n] = sorted;
-    });
+        for (let p = 0; p < collected[nm].length; p++) {
+            sorted.push(collected[nm][p]);
+        }
+        out[nm] = sorted;
+    }
     return out;
 }
 
 function createOptions() {
-    const lists = collectServicesByBuckets({
-        motion: [
-            {serviceTypes: [HS.MotionSensor], characteristicTypes: [HC.MotionDetected]},
-            {serviceTypes: [HS.OccupancySensor], characteristicTypes: [HC.OccupancyDetected]},
-            {serviceTypes: [HS.ContactSensor], characteristicTypes: [HC.ContactSensorState]}
-        ],
-        manual: [
-            {serviceTypes: [HS.Switch], characteristicTypes: [HC.On]},
-            {serviceTypes: [HS.ContactSensor], characteristicTypes: [HC.ContactSensorState]},
-            {serviceTypes: [HS.StatelessProgrammableSwitch], characteristicTypes: [HC.ProgrammableSwitchEvent]},
-            {serviceTypes: [HS.C_PulseMeter], characteristicTypes: [HC.C_PulseCount]}
-        ],
-        gate: [
-            {serviceTypes: [HS.Switch], characteristicTypes: [HC.On]}
-        ],
-        lux: [
-            {serviceTypes: [HS.LightSensor], characteristicTypes: [HC.CurrentAmbientLightLevel]}
-        ]
+    const lists = collectServicesByTypes({
+        motion: [HS.MotionSensor, HS.OccupancySensor, HS.ContactSensor],
+        manual: [HS.Switch, HS.ContactSensor, HS.StatelessProgrammableSwitch, HS.C_PulseMeter],
+        gate: [HS.Switch],
+        lux: [HS.LightSensor]
     });
     const motionPickerList = lists.motion;
     const manualPickerList = lists.manual;
@@ -870,7 +933,7 @@ function createOptions() {
     };
 
     options.groupAutomationLimits = {
-        name: {ru: "  ОГРАНИЧЕНИЯ АВТОМАТИКИ", en: "  AUTOMATION LIMITS"},
+        name: {ru: "  РАЗРЕШЕНИЕ АВТОМАТИКИ", en: "  ALLOW AUTOMATION"},
         type: "String",
         value: "",
         formType: "status"
@@ -893,6 +956,19 @@ function createOptions() {
         desc: {
             ru: "Если включено, логика выключателя «Разрешение автоматики» инвертируется: пока он отключен, разрешено автоматическое включение по датчикам, иначе только ручное включение.",
             en: "If enabled, the logic of the \"Allow automation\" switch is inverted: while the switch is OFF, auto-on by sensors is allowed; otherwise only manual turn-on is allowed."
+        },
+        type: "Boolean",
+        value: false
+    };
+
+    options.gateBlocksManualInputs = {
+        name: {
+            ru: "Также не реагировать на ручные входы",
+            en: "Also ignore manual inputs"
+        },
+        desc: {
+            ru: "Работает только вместе с выбранным выключателем «Разрешение автоматики». Если включено, то пока автоматика запрещена, сценарий не реагирует и на ручные входы: выключатели, кнопки, импульсы и датчики открытия — свет по ним не включается и не выключается.",
+            en: "Only used together with the selected \"Allow automation\" switch. If enabled, while automation is blocked the scenario also ignores manual inputs — switches, buttons, pulse counters and contact sensors: they neither turn the light on nor off."
         },
         type: "Boolean",
         value: false

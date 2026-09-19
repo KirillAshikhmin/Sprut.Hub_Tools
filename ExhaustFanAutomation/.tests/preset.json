@@ -1,0 +1,181 @@
+{
+  "name": "Автоматизация вытяжки — санузел",
+  "description": "Санузел с вытяжкой (привязанный сервис FanBasic со скоростью), датчиком присутствия, датчиком движения, датчиком открытия двери, датчиком влажности в санузле и контрольным датчиком влажности в коридоре. Рядом — настенный выключатель как ручной вход, кнопка и виртуальный рубильник автоматики. Логика сценария висит на характеристике On вытяжки.",
+  "options": {
+    "motion1": "",
+    "motion2": "",
+    "motion3": "",
+    "contactInverted": false,
+    "humiditySensor": "",
+    "targetHumidity": 60,
+    "referenceHumiditySensor": "",
+    "referenceDelta": 5,
+    "humidityHighDelta": 10,
+    "humidityStartsFan": false,
+    "boostEnabled": false,
+    "normalSpeed": 50,
+    "boostSpeed": 100,
+    "manualControl1": "",
+    "manualControl2": "",
+    "manualControl3": "",
+    "gateAutoSwitch": "",
+    "gateAutoSwitchInvert": false,
+    "gateBlocksManualInputs": false,
+    "noAutoOffWhenManualOn": false,
+    "noAutoOnAfterManualOff": false,
+    "ignoreManualWithin5sAfterSensorOn": true,
+    "onDelaySeconds": 120,
+    "offDelaySeconds": 300,
+    "minRunMinutes": 0,
+    "cooldownMinutes": 0,
+    "maxRunMinutes": 180,
+    "notifyOnDryTimeout": false,
+    "notifyChannels": "",
+    "notifyClients": "",
+    "debug": false
+  },
+  "variables": {},
+  "rooms": [{ "name": "Санузел" }, { "name": "Коридор" }],
+  "accessories": [
+    {
+      "id": 100,
+      "name": "Вытяжка",
+      "room": "Санузел",
+      "target": true,
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "FanBasic",
+          "name": "Вытяжка",
+          "characteristics": [
+            { "type": "On", "value": false },
+            { "type": "RotationSpeed", "value": 50 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "name": "Датчик присутствия",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "OccupancySensor",
+          "characteristics": [{ "type": "OccupancyDetected", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Датчик движения",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "MotionSensor",
+          "characteristics": [{ "type": "MotionDetected", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "name": "Датчик открытия двери",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "ContactSensor",
+          "characteristics": [{ "type": "ContactSensorState", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "name": "Датчик влажности санузла",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "HumiditySensor",
+          "characteristics": [{ "type": "CurrentRelativeHumidity", "value": 55 }]
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "name": "Контрольный датчик влажности",
+      "room": "Коридор",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "HumiditySensor",
+          "characteristics": [{ "type": "CurrentRelativeHumidity", "value": 45 }]
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "name": "Настенный выключатель вытяжки",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "Кнопка у двери",
+      "room": "Санузел",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "StatelessProgrammableSwitch",
+          "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "Рубильник автоматики",
+      "room": "Коридор",
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "characteristics": [{ "type": "On", "value": true }]
+        }
+      ]
+    }
+  ]
+}

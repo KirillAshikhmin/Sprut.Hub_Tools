@@ -10,8 +10,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/asihminkirill/.agents/skills/autopilot",
   "startedAt": "2026-09-20T01:35:00+03:00",
-  "updatedAt": "2026-09-20T02:23:42+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-09-20T02:26:37+03:00",
+  "finishedAt": "2026-09-20T02:26:37+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -46,22 +46,23 @@ window.STATE =
     },
     {
       "id": "build",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-20T01:45:31+03:00",
-      "note": "5 из 6 тасков готовы",
-      "finishedAt": "2026-09-20T02:08:08+03:00"
+      "note": "6 из 6 тасков готовы",
+      "finishedAt": "2026-09-20T02:26:37+03:00"
     },
     {
       "id": "review",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-20T01:52:33+03:00",
-      "note": "проверено 5 из 6",
-      "finishedAt": "2026-09-20T02:08:08+03:00"
+      "note": "проверено 6 из 6",
+      "finishedAt": "2026-09-20T02:26:37+03:00"
     },
     {
       "id": "final",
-      "status": "pending",
-      "startedAt": "2026-09-20T02:08:08+03:00"
+      "status": "done",
+      "startedAt": "2026-09-20T02:08:08+03:00",
+      "finishedAt": "2026-09-20T02:26:37+03:00"
     }
   ],
   "requirements": {
@@ -279,13 +280,24 @@ window.STATE =
       "zone": [
         "ExhaustFanAutomation/"
       ],
-      "status": "repair",
+      "status": "done",
       "retries": 0,
       "repairs": 1,
       "handoffs": 0,
       "startedAt": "2026-09-20T02:20:51+03:00",
       "repairFindings": [
         "сценарий публикуется впервые — версия возвращается к 1.0 с одной записью в changelog; README не говорил, что событие, не переключающее вытяжку, перезапускает предельный таймер"
+      ],
+      "finishedAt": "2026-09-20T02:26:37+03:00",
+      "commit": "e7e7405",
+      "tests": {
+        "passed": 3820,
+        "failed": 0
+      },
+      "files": [
+        "ExhaustFanAutomation/README.md",
+        "ExhaustFanAutomation/publish.json",
+        "ExhaustFanAutomation/ExhaustFanAutomation.json"
       ]
     }
   ],
@@ -363,7 +375,7 @@ window.STATE =
     "method": "свои тесты в эмуляторе вне репозитория + ручной прогон через веб-UI симулятора на preset.json",
     "verdict": "все требования брифа — реализовано, кроме одного дополнения",
     "drift": [
-      "G05 «Пауза перед повторным включением» — манифест: done, слепая приёмка: частично. После окончания паузы вытяжка сама не возвращается при непрерывном присутствии, нужен новый фронт датчика. Отдан в таск 04 как правка поведения."
+      "G05 «Пауза перед повторным включением» — манифест: done, слепая приёмка: частично. Исправлено таском 04: по истечении паузы вытяжка возвращается сама."
     ],
     "notes": [
       "preset.json: селекторы устройств пустые, ручная проверка в веб-UI не работает без ручного выбора датчиков. Отдано в таск 05.",

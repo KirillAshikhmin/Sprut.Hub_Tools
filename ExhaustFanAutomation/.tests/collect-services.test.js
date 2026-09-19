@@ -45,6 +45,16 @@ function label(entry) {
   return String(name);
 }
 
+// Порядок элементов списка сверяется с ЯВНО выписанными именами фикстуры:
+// ожидаемое значение берётся не из кода под тестом.
+function expectOrder(list, expectedNames) {
+  const labels = list.slice(1).map(label);
+  expect(labels).toHaveLength(expectedNames.length);
+  for (let i = 0; i < expectedNames.length; i += 1) {
+    expect(labels[i]).toContain(expectedNames[i]);
+  }
+}
+
 function house(hub) {
   return {
     motion: addService(hub, 10, 'Ясли движение', 'Санузел', HS.MotionSensor, HC.MotionDetected, false),
@@ -117,22 +127,30 @@ describe('collectServicesByTypes — форма списка', () => {
 
   it('один и тот же сервис не дублируется в пределах списка', ({ hub, scenario }) => {
     const h = house(hub);
-    // ContactSensor запрошен в manual дважды — как контакт и как ручной вход.
-    const manual = values(collect(scenario).manual);
+    // Тип ContactSensor указан в ОДНОМ списке запроса дважды — сервис обязан
+    // попасть в результат один раз. Без дубля в запросе дублировать нечего,
+    // и утверждение проходило бы и у реализации вовсе без дедупликации.
+    const dup = values(scenario.call('collectServicesByTypes', [{
+      dup: [HS.Switch, HS.ContactSensor, HS.StatelessProgrammableSwitch, HS.ContactSensor],
+    }]).dup);
     const uuid = h.contact.getService(HS.ContactSensor).getUUID();
     let count = 0;
-    for (const value of manual) if (value === uuid) count += 1;
+    for (const value of dup) if (value === uuid) count += 1;
 
     expect(count).toBe(1);
+    expect(dup).toHaveLength(3);   // выключатель, контакт, кнопка — по одному разу
   });
 
   it('элементы отсортированы по отображаемому русскому имени', ({ hub, scenario }) => {
     house(hub);
-    const manual = collect(scenario).manual.slice(1).map(label);
-    const sorted = manual.slice().sort((a, b) => a.localeCompare(b, 'ru'));
+    const lists = collect(scenario);
 
-    expect(manual).toEqual(sorted);
-    expect(manual.length).toBeGreaterThan(1);
+    // Ожидаемый порядок выписан по русскому алфавиту от имён фикстуры, а не пересчитан
+    // тем же сравнением, что и в коде: иначе утверждение «отсортировано так же, как
+    // сортирует код» верно при любой сортировке. Все устройства в одной комнате
+    // «Санузел», поэтому порядок задают имена аксессуаров.
+    expectOrder(lists.manual, ['Бдверь', 'Выключатель', 'Импульсы', 'Кнопка']);
+    expectOrder(lists.motion, ['Бдверь', 'Присутствие', 'Ясли движение']);
   });
 
   it('у каждого элемента есть value вида "<аксессуар>.<сервис>"', ({ hub, scenario }) => {

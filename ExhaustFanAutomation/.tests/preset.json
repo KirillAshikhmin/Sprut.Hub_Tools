@@ -2,23 +2,23 @@
   "name": "Автоматизация вытяжки — санузел",
   "description": "Санузел с вытяжкой (привязанный сервис FanBasic со скоростью), датчиком присутствия, датчиком движения, датчиком открытия двери, датчиком влажности в санузле и контрольным датчиком влажности в коридоре. Рядом — настенный выключатель как ручной вход, кнопка и виртуальный рубильник автоматики. Логика сценария висит на характеристике On вытяжки.",
   "options": {
-    "motion1": "",
+    "motion1": "101.21",
     "motion2": "",
     "motion3": "",
     "contactInverted": false,
-    "humiditySensor": "",
+    "humiditySensor": "104.51",
     "targetHumidity": 60,
-    "referenceHumiditySensor": "",
+    "referenceHumiditySensor": "105.61",
     "referenceDelta": 5,
     "humidityHighDelta": 10,
     "humidityStartsFan": false,
     "boostEnabled": false,
     "normalSpeed": 50,
     "boostSpeed": 100,
-    "manualControl1": "",
+    "manualControl1": "106.71",
     "manualControl2": "",
     "manualControl3": "",
-    "gateAutoSwitch": "",
+    "gateAutoSwitch": "108.91",
     "gateAutoSwitchInvert": false,
     "gateBlocksManualInputs": false,
     "noAutoOffWhenManualOn": false,
@@ -44,10 +44,12 @@
       "target": true,
       "services": [
         {
+          "id": 10,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 11,
           "type": "FanBasic",
           "name": "Вытяжка",
           "characteristics": [
@@ -63,10 +65,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 20,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 21,
           "type": "OccupancySensor",
           "characteristics": [{ "type": "OccupancyDetected", "value": 0 }]
         }
@@ -78,10 +82,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 30,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 31,
           "type": "MotionSensor",
           "characteristics": [{ "type": "MotionDetected", "value": false }]
         }
@@ -93,10 +99,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 40,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 41,
           "type": "ContactSensor",
           "characteristics": [{ "type": "ContactSensorState", "value": 0 }]
         }
@@ -108,10 +116,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 50,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 51,
           "type": "HumiditySensor",
           "characteristics": [{ "type": "CurrentRelativeHumidity", "value": 55 }]
         }
@@ -123,10 +133,12 @@
       "room": "Коридор",
       "services": [
         {
+          "id": 60,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 61,
           "type": "HumiditySensor",
           "characteristics": [{ "type": "CurrentRelativeHumidity", "value": 45 }]
         }
@@ -138,10 +150,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 70,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 71,
           "type": "Switch",
           "characteristics": [{ "type": "On", "value": false }]
         }
@@ -153,10 +167,12 @@
       "room": "Санузел",
       "services": [
         {
+          "id": 80,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 81,
           "type": "StatelessProgrammableSwitch",
           "characteristics": [{ "type": "ProgrammableSwitchEvent", "value": 0 }]
         }
@@ -168,10 +184,12 @@
       "room": "Коридор",
       "services": [
         {
+          "id": 90,
           "type": "AccessoryInformation",
           "characteristics": [{ "type": "C_Online", "value": true }]
         },
         {
+          "id": 91,
           "type": "Switch",
           "characteristics": [{ "type": "On", "value": true }]
         }

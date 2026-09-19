@@ -327,7 +327,10 @@ describe('§3.2 Подписки — учитывается только выб�
     expect(isOn(fan)).toBe(false);    // мёртвый слот не считается вечной активностью
   });
 
-  it('§16 один и тот же датчик в двух слотах результата не меняет', ({ hub, scenario, time }) => {
+  // §16 «повторный учёт не меняет результата». Обе проверки ниже подобраны так, чтобы
+  // ДВОЙНОЙ учёт активности их изменил: иначе исход совпадает с обычным одно-слотовым
+  // сценарием и утверждение проходит у любой реализации.
+  it('§16 один и тот же датчик в двух слотах: возврат активности снимает отсчёт выключения целиком', ({ hub, scenario, time }) => {
     const fan = addFan(hub);
     const motion = addMotion(hub, 2, false);
     const uuid = uuidOf(motion, HS.MotionSensor);
@@ -335,15 +338,41 @@ describe('§3.2 Подписки — учитывается только выб�
       motion1: uuid, motion2: uuid,
       onDelaySeconds: 0, offDelaySeconds: 300, maxRunMinutes: 0,
     });
-    const vars = {};
-    boot(scenario, fan, vars, options);
+    boot(scenario, fan, {}, options);
 
     motionChar(motion).setValue(true);
     expect(isOn(fan)).toBe(true);
 
-    motionChar(motion).setValue(false);
-    time.advance('300s');
+    motionChar(motion).setValue(false);   // потеря активности учтена по обоим слотам
+    time.advance('200s');
+    motionChar(motion).setValue(true);    // возврат активности отменяет отсчёт (§10)
+    time.advance('200s');
+    expect(isOn(fan)).toBe(true);         // «забытый» второй отсчёт погасил бы на 300-й секунде
+
+    motionChar(motion).setValue(false);   // и обычное выключение по-прежнему работает
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
     expect(isOn(fan)).toBe(false);
+  });
+
+  it('§16 один и тот же датчик в двух слотах: сброс сессии снимает накопление целиком', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const uuid = uuidOf(motion, HS.MotionSensor);
+    const options = baseOptions({
+      motion1: uuid, motion3: uuid,
+      onDelaySeconds: 120, offDelaySeconds: 10, maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);    // сессия началась, таймер включения на 120 с
+    time.advance('5s');
+    motionChar(motion).setValue(false);   // таймер сброса сессии на 10 с
+    time.advance('10s');                  // сессия обнулена, таймер включения снят (§6)
+
+    time.advance('200s');
+    expect(isOn(fan)).toBe(false);        // «забытый» второй таймер включения поднял бы вытяжку
   });
 });
 
@@ -865,6 +894,52 @@ describe('§8 Авто-включение — условия', () => {
     time.advance('10s');
     motionChar(motion).setValue(true);
     expect(isOn(fan)).toBe(false);    // пауза ещё идёт
+  });
+
+  it('G05 пауза кончилась, присутствие держится — вытяжка возвращается сама, без нового фронта', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 0, offDelaySeconds: 300, cooldownMinutes: 15, maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(true);
+    motionChar(motion).setValue(false);
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);    // авто-выключение по таймеру — пауза началась
+
+    motionChar(motion).setValue(true);  // человек вернулся; дальше фронтов на датчике нет
+    expect(isOn(fan)).toBe(false);      // пауза не пускает
+
+    // Смысл паузы — переждать и продолжить: по её окончании повод всё ещё жив,
+    // и вытяжка обязана включиться сама, а не ждать следующего события.
+    time.advance('14m');
+    expect(isOn(fan)).toBe(false);      // пауза ещё идёт
+    time.advance('1m');
+    expect(isOn(fan)).toBe(true);       // ровно через cooldownMinutes — возврат
+  });
+
+  it('G05 после предельного таймера возврата нет: блокировка ждёт, пока повод исчезнет сам', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 0, offDelaySeconds: 300, cooldownMinutes: 15, maxRunMinutes: 10,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);  // присутствие держится всё время теста
+    expect(isOn(fan)).toBe(true);
+    time.advance('10m');
+    expect(isOn(fan)).toBe(false);      // сработал предел — это не пауза
+
+    time.advance('15m');
+    expect(isOn(fan)).toBe(false);      // окончание паузы блокировку после предела не снимает
+    time.advance('60m');
+    expect(isOn(fan)).toBe(false);      // пока повод жив, возврата нет
   });
 
   it('G05 cooldownMinutes = 0 — паузы нет, вытяжка включается снова сразу', ({ hub, scenario, time }) => {
@@ -1942,6 +2017,56 @@ describe('§12 Антидребезг (ignoreManualWithin5sAfterSensorOn)', () =
     expect(isOn(fan)).toBe(false);
   });
 
+  // Окно отсчитывается от момента АВТО-включения (§15) и не перезапускается событием,
+  // которое состояние вытяжки не меняет.
+  it('событие ручного Switch → On при уже включённой вытяжке окно антидребезга не сбрасывает', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const wall = addSwitch(hub, 4, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      manualControl2: uuidOf(wall, HS.Switch),
+      ignoreManualWithin5sAfterSensorOn: true,
+      onDelaySeconds: 0, maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);    // авто-включение — отсюда идут 5 секунд
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    switchChar(wall).setValue(true);      // вытяжка уже включена — состояние не меняется
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('2s');                   // 3 с от авто-включения, а не от события Switch
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(true);         // всё ещё внутри окна — нажатие подавлено
+  });
+
+  it('через 6 секунд после авто-включения кнопка работает, несмотря на промежуточное событие Switch', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const wall = addSwitch(hub, 4, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      manualControl2: uuidOf(wall, HS.Switch),
+      ignoreManualWithin5sAfterSensorOn: true,
+      onDelaySeconds: 0, maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);    // авто-включение — отсюда идут 5 секунд
+    time.advance('1s');
+    switchChar(wall).setValue(true);      // вытяжка уже включена — состояние не меняется
+    time.advance('5s');                   // 6 с от авто-включения: окно кончилось
+
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(false);        // кнопка снова переключает
+  });
+
   it('антидребезг выключен — кнопка работает сразу', ({ hub, scenario, time }) => {
     const fan = addFan(hub);
     const motion = addMotion(hub, 2, false);
@@ -2035,6 +2160,45 @@ describe('§13.4 Подавленное событие не порождает �
     motionChar(motion).setValue(false);
     time.advance('300s');
     expect(isOn(fan)).toBe(false);        // удержания нет — таймеры продолжают работать
+  });
+
+  // «Подавленное событие не СТАВИТ блокировку» наблюдаемо ровно одним путём: погасить
+  // вытяжку, не тронув блокировку, умеет только ручной Switch в Off (§12 — к нему
+  // noAutoOnAfterManualOff не относится, это отдельно проверено в §12). Его событие
+  // Switch → On идёт ДО подавленной кнопки, поэтому снять поставленную ею блокировку
+  // ему нечем; на окно антидребезга это событие не влияет (§12, §15).
+  it('антидребезг: подавленная кнопка не ставит блокировку noAutoOnAfterManualOff', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const hum = addHumidity(hub, 3, 50);
+    const button = addButton(hub, 4);
+    const wall = addSwitch(hub, 5, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(hum, HS.HumiditySensor),
+      humidityStartsFan: true,
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      manualControl2: uuidOf(wall, HS.Switch),
+      noAutoOnAfterManualOff: true,
+      ignoreManualWithin5sAfterSensorOn: true,
+      targetHumidity: 60, humidityHighDelta: 10,
+      onDelaySeconds: 0, offDelaySeconds: 300, maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);    // авто-включение по датчику — окно антидребезга пошло
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    switchChar(wall).setValue(true);      // вытяжка уже включена — состояние не меняется
+    time.advance('2s');
+    buttonChar(button).setValue(0);       // подавлено окном антидребезга: блокировку ставить нельзя
+    expect(isOn(fan)).toBe(true);
+
+    switchChar(wall).setValue(false);     // гасим ручным Switch — блокировку он не ставит
+    expect(isOn(fan)).toBe(false);
+
+    humidityChar(hum).setValue(85);       // живой повод по влажности
+    expect(isOn(fan)).toBe(true);         // блокировки нет — авто-включение работает
   });
 
   it('gateBlocksManualInputs: подавленная кнопка не снимает блокировку noAutoOnAfterManualOff', ({ hub, scenario }) => {
@@ -2156,19 +2320,27 @@ describe('§14 Перезапуск хаба и сохранение сцена�
       motion1: uuidOf(motion, HS.MotionSensor),
       onDelaySeconds: 0, offDelaySeconds: 300, maxRunMinutes: 0,
     });
-    const vars = {};
-    boot(scenario, fan, vars, options);
+    boot(scenario, fan, {}, options);
 
     motionChar(motion).setValue(true);
     expect(isOn(fan)).toBe(true);
-    motionChar(motion).setValue(false);
+    motionChar(motion).setValue(false);   // прежний отсчёт выключения пошёл отсюда: до 300 с
     time.advance('100s');
 
-    boot(scenario, fan, vars, options);   // пересохранение сценария
+    // Пересохранение сценария: хаб исполняет скрипт заново со СВЕЖИМ variables
+    // (spec §9). С прежним объектом вызов пошёл бы по ветке внешнего изменения,
+    // и утверждения ниже прошли бы при любой реализации старта.
+    boot(scenario, fan, {}, options);
     expect(isOn(fan)).toBe(true);         // состояние задним числом не меняется
 
-    time.advance('20m');
+    // Отсчёт §14 ведётся от момента старта, проверяем точной границей.
+    time.advance('200s');                 // 300 с от потери активности — прежний таймер
+    expect(isOn(fan)).toBe(true);         // сработать он уже не должен
+    time.advance('99s');                  // 299 с от пересохранения
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');                   // ровно 300 с от пересохранения
     expect(isOn(fan)).toBe(false);        // выключилась ровно один раз
+
     time.advance('20m');
     expect(isOn(fan)).toBe(false);        // и обратно не включилась
   });
@@ -2180,9 +2352,8 @@ describe('§14 Перезапуск хаба и сохранение сцена�
       motion1: uuidOf(motion, HS.MotionSensor),
       onDelaySeconds: 0, offDelaySeconds: 300, maxRunMinutes: 0,
     });
-    const vars = {};
-    boot(scenario, fan, vars, options);
-    boot(scenario, fan, vars, options);
+    boot(scenario, fan, {}, options);
+    boot(scenario, fan, {}, options);     // пересохранение — снова свежий variables
 
     time.advance('10m');
     expect(isOn(fan)).toBe(false);

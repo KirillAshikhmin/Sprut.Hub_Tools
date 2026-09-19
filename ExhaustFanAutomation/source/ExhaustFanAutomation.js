@@ -9,21 +9,34 @@ const MAX_MANUAL_CONTROL_SLOTS = 3;
 /** Влажность выше 100 % не бывает — потолок для рабочего порога по контрольному датчику. */
 const MAX_HUMIDITY_PERCENT = 100;
 
+// Что считать активностью — одна карта на все места, где это нужно знать:
+// опрос текущего состояния, разбор события и фильтр подписки.
+const OCCUPANCY_SENSOR_KINDS = [
+    {service: HS.MotionSensor, characteristic: HC.MotionDetected, activeValue: true},
+    {service: HS.OccupancySensor, characteristic: HC.OccupancyDetected, activeValue: 1},
+    {service: HS.ContactSensor, characteristic: HC.ContactSensorState, activeValue: 1}
+];
+
 const SECOND_MS = 1000;
 const MINUTE_MS = 60000;
 
-// Таймер накопления присутствия может сработать на доли миллисекунды раньше
-// расчётного момента. Без допуска такое срабатывание молча потеряло бы включение:
-// повторной попытки до следующего события датчика не будет.
-const PRESENCE_READY_TOLERANCE_MS = 50;
+// Таймеры сценария: поле в variables и текст в лог при снятии. Завести и снять
+// таймер можно только по дескриптору отсюда — имя поля никогда не пишется строкой
+// на месте вызова: опечатку в нём не поймали бы ни тесты, ни jjs, а от поля
+// onDelay зависит решение «присутствие набрано».
+const TIMER_ON_DELAY = {field: "onDelayTimerId", clearedText: "Таймер накопления присутствия сброшен"};
+const TIMER_PRESENCE_RESET = {field: "presenceResetTimerId", clearedText: "Сброс накопления присутствия отменён: активность вернулась"};
+const TIMER_OFF = {field: "offTimerId", clearedText: "Таймер выключения сброшен"};
+const TIMER_MAX_RUN = {field: "maxRunTimerId", clearedText: "Предельный таймер сброшен"};
+const TIMER_COOLDOWN = {field: "cooldownTimerId", clearedText: "Отсчёт паузы перед повторным включением сброшен"};
+const TIMER_AUTO_ON_LOCK = {field: "autoOnLockTimerId", clearedText: "Блокировка авто-включения: отсчёт снятия отменён"};
 
 /** Причины блокировки авто-включения (см. §7 и §8 спецификации). */
 const LOCK_MANUAL_OFF = "manualOff";
 const LOCK_MAX_RUN = "maxRun";
 
-// Откуда пришло включение вытяжки. От этого зависят «ручное удержание» (§7) и
-// окно антидребезга ручных входов; остальные поля сеанса одинаковы для любого
-// включения. Разбирает эти значения beginRun — и больше никто.
+// Откуда пришло включение: от этого зависят «ручное удержание» (§7) и окно
+// антидребезга ручных входов. Разбирает эти значения beginRun — и больше никто.
 const RUN_BY_SENSOR = "sensor";
 const RUN_BY_MANUAL = "manual";
 const RUN_BY_MANUAL_SWITCH = "manualSwitch";
@@ -34,9 +47,8 @@ const RUN_BY_RESTART = "restart";
 const SUB_GEN_KEY_PREFIX = "EFA_subGen_";
 const TIMERS_KEY_PREFIX = "EFA_timers_";
 
-// Значения по умолчанию заданы один раз: их же берут опции в UI и подстановка
-// при отсутствии значения в options (частично заполненные опции не должны
-// превращать таймеры в NaN).
+// Значения по умолчанию заданы один раз: их берут и опции в UI, и подстановка
+// при пустом значении в options (иначе таймеры и пороги превращались бы в NaN).
 const DEFAULT_TARGET_HUMIDITY = 60;
 const DEFAULT_REFERENCE_DELTA = 5;
 const DEFAULT_HUMIDITY_HIGH_DELTA = 10;
@@ -78,6 +90,7 @@ info = {
 
     variables: {
         cachedFanService: undefined,
+        scenarioStarted: false,
         externalSubscribed: false,
         subGen: undefined,
 
@@ -107,12 +120,7 @@ function trigger(source, value, variables, options, context) {
     try {
         variables.cachedFanService = source.getService();
 
-        // Первый вызов после загрузки или пересохранения сценария — это запуск
-        // (onStart: true), а не событие от устройства: хаб отдельного признака не
-        // даёт, но подписка на этот момент ещё не создана. Отличать обязательно:
-        // у стартового вызова нет ни «включили вручную», ни «выключили вручную»,
-        // поэтому ни удержание, ни блокировка авто-включения по нему не ставятся.
-        const isScenarioStart = !variables.externalSubscribed;
+        const isScenarioStart = consumeScenarioStartFlag(variables);
 
         ensureExternalSubscription(variables, options);
 
@@ -143,26 +151,35 @@ function trigger(source, value, variables, options, context) {
     }
 }
 
-// Запуск хаба или пересохранение сценария (R25i, §9). Состояние восстанавливается
-// по фактическому положению вещей: включённая вытяжка получает новый сеанс работы
-// (реальное время включения хабу неизвестно) и таймер выключения, если активности
-// нет; выключенная — начинает накопление присутствия, если активность есть.
+// Запуск сценария (onStart: true) отличать обязательно: у него нет ни «включили
+// вручную», ни «выключили вручную», поэтому ни удержание, ни блокировка по нему
+// не ставятся. Отдельного признака хаб не даёт — сценарий метит запуск сам,
+// собственным полем variables; метку ставит и обработчик подписки, чтобы событие,
+// пришедшее раньше стартового вызова, за запуск не сошло.
+function consumeScenarioStartFlag(variables) {
+    const isStart = variables.scenarioStarted !== true;
+    variables.scenarioStarted = true;
+    return isStart;
+}
+
+// Запуск хаба или пересохранение сценария (R25i, §9): состояние восстанавливается
+// по фактическому положению вещей. Реальное время включения хабу неизвестно,
+// поэтому включённая вытяжка получает новый сеанс работы.
 function handleScenarioStart(variables, options, logSource, on) {
     if (on) {
         beginRun(variables, options, logSource, RUN_BY_RESTART);
-        syncOffTimerWhenFanOnWithoutOccupancy(variables, options, logSource);
+        armOffTimer(variables, options, logSource);
         return;
     }
     startPresenceAccumulationIfActive(variables, options, logSource);
 }
 
-// Вытяжку включили извне (приложение, сцена, физический выключатель на самой
-// вытяжке) — либо хаб перезапустился при уже включённой вытяжке. Реальное время
-// включения хабу неизвестно, поэтому сеанс работы начинается заново.
+// Вытяжку включили извне (приложение, сцена, выключатель на самой вытяжке):
+// реальное время включения неизвестно, поэтому сеанс работы начинается заново.
 function handleFanTurnedOnExternally(variables, options, logSource) {
     releaseAutoOnLock(variables, options, logSource);
     beginRun(variables, options, logSource, RUN_BY_EXTERNAL);
-    syncOffTimerWhenFanOnWithoutOccupancy(variables, options, logSource);
+    armOffTimer(variables, options, logSource);
 }
 
 function handleFanTurnedOffExternally(variables, options, logSource) {
@@ -170,32 +187,12 @@ function handleFanTurnedOffExternally(variables, options, logSource) {
     clearOffTimer(variables, options, logSource);
     endRun(variables, options, logSource);
     registerManualOff(variables, options, logSource);
-    // Перезапуск хаба при выключенной вытяжке и активных датчиках: накопление
-    // присутствия должно начаться сразу, иначе первое включение ждало бы
+    // Накопление присутствия начинается сразу, иначе первое включение ждало бы
     // следующего события датчика.
     startPresenceAccumulationIfActive(variables, options, logSource);
 }
 
-function syncOffTimerWhenFanOnWithoutOccupancy(variables, options, logSource) {
-    if (isAnyManualSwitchOn(options)) {
-        logInfo("Вытяжка включена, ручной выключатель в On — таймер выключения не нужен", logSource, options.debug);
-        return;
-    }
-    if (computeOccupancyActive(options)) {
-        logInfo("Вытяжка включена, датчики активны — таймер выключения не нужен", logSource, options.debug);
-        return;
-    }
-    if (variables.manualHold) {
-        logInfo("Вытяжка включена и удерживается вручную — гасит только предельный таймер", logSource, options.debug);
-        return;
-    }
-    logInfo("Вытяжка включена, активности нет — запуск таймера выключения", logSource, options.debug);
-    armOffTimer(variables, options, logSource);
-}
-
-// ----------------------------------------------------------------------------
-// Подписка на внешние устройства
-// ----------------------------------------------------------------------------
+// --- Подписка на внешние устройства -----------------------------------------
 
 function ensureExternalSubscription(variables, options) {
     if (variables.externalSubscribed) {
@@ -203,42 +200,32 @@ function ensureExternalSubscription(variables, options) {
     }
     variables.externalSubscribed = true;
 
-    // Защита от «зависших» подписок. При пересохранении сценария хаб исполняет
-    // скрипт заново со свежим variables, но старый колбэк подписки остаётся жив
-    // со «старым» variables и может некорректно управлять вытяжкой. Метим каждую
-    // подписку «поколением» в общем хранилище global (переживает пересохранение):
-    // актуальна только подписка последнего поколения, более старые делают no-op.
-    // Если global недоступен — защита просто отключается.
+    // Защита от «зависших» подписок и таймеров: при пересохранении сценария хаб
+    // исполняет скрипт заново со свежим variables, но колбэки прошлого экземпляра
+    // живы со старым (предельный таймер — до недели) и продолжают управлять
+    // вытяжкой. Поэтому экземпляр метится «поколением» в global (переживает
+    // пересохранение): актуально последнее, старые делают no-op. Нет global —
+    // нет и защиты.
     const subGen = nextSubscriptionGeneration(variables);
-    // Поколение нужно не только подписке: таймеры прошлого поколения тоже живы
-    // (предельный — до недели) и через старый variables писали бы в вытяжку.
-    // Их уже снял nextSubscriptionGeneration; здесь поколение запоминается,
-    // чтобы под ним заводились задачи текущего экземпляра сценария.
+    // В variables поколение кладётся затем, чтобы под ним заводились задачи
+    // текущего экземпляра сценария, — не только ради этой подписки.
     variables.subGen = subGen;
 
     logInfo("Старт: подписка на датчики и ручные входы создана" + (subGen ? " (поколение " + subGen.gen + ")" : ""), variables.cachedFanService, options.debug);
 
+    // Типы датчиков активности берутся из общей карты, а не перечисляются заново.
+    const serviceTypes = [HS.HumiditySensor, HS.Switch, HS.StatelessProgrammableSwitch, HS.C_PulseMeter];
+    const characteristicTypes = [HC.CurrentRelativeHumidity, HC.On, HC.ProgrammableSwitchEvent, HC.C_PulseCount];
+    for (let i = 0; i < OCCUPANCY_SENSOR_KINDS.length; i++) {
+        serviceTypes.push(OCCUPANCY_SENSOR_KINDS[i].service);
+        characteristicTypes.push(OCCUPANCY_SENSOR_KINDS[i].characteristic);
+    }
+
     Hub.subscribeWithCondition(
         "",
         "",
-        [
-            HS.MotionSensor,
-            HS.OccupancySensor,
-            HS.ContactSensor,
-            HS.HumiditySensor,
-            HS.Switch,
-            HS.StatelessProgrammableSwitch,
-            HS.C_PulseMeter
-        ],
-        [
-            HC.MotionDetected,
-            HC.OccupancyDetected,
-            HC.ContactSensorState,
-            HC.CurrentRelativeHumidity,
-            HC.On,
-            HC.ProgrammableSwitchEvent,
-            HC.C_PulseCount
-        ],
+        serviceTypes,
+        characteristicTypes,
         (extSource, extValue) => {
             try {
                 if (isStaleSubscription(subGen)) {
@@ -252,10 +239,8 @@ function ensureExternalSubscription(variables, options) {
     );
 }
 
-// Увеличивает счётчик «поколения» подписки в общем хранилище global, привязанный
-// к UUID управляемой вытяжки, и снимает задачи прошлых поколений. Возвращает
-// { key, gen, timersKey } или null, если global недоступен/не сохраняет значения
-// (тогда защита от зависших подписок и таймеров отключена).
+// Увеличивает счётчик поколений в global (ключ привязан к UUID вытяжки) и снимает
+// задачи прошлых поколений. null — global недоступен или не сохраняет значения.
 function nextSubscriptionGeneration(variables) {
     try {
         if (typeof global === "undefined" || global === null || !variables.cachedFanService) {
@@ -276,10 +261,10 @@ function nextSubscriptionGeneration(variables) {
     }
 }
 
-// Таймеры прошлого экземпляра сценария снимаются, а не просто игнорируются при
-// срабатывании: иначе колбэк дожил бы до своего срока, а у предельного таймера
-// это до недели. Список задач лежит в global, а не в variables: у нового
-// экземпляра variables свежие, и дотянуться до старых задач больше нечем.
+// Таймеры прошлого экземпляра снимаются, а не просто игнорируются при
+// срабатывании: иначе колбэк дожил бы до своего срока — до недели у предельного.
+// Список задач лежит в global: у нового экземпляра variables свежие, и дотянуться
+// до старых задач больше нечем.
 function cancelTimersOfPreviousGenerations(timersKey) {
     const pending = global[timersKey];
     global[timersKey] = [];
@@ -295,31 +280,35 @@ function cancelTimersOfPreviousGenerations(timersKey) {
     }
 }
 
-// Единственная точка, где сценарий заводит таймер. Задача попадает в список
-// текущего поколения, чтобы следующий экземпляр сценария её снял; проверка
-// поколения в колбэке остаётся страховкой на случай, когда global недоступен
-// и снимать задачи некому.
-function scheduleGuardedTimeout(variables, delayMs, callback) {
+// Единственная точка, где сценарий заводит таймер: задача ложится в поле
+// variables (оттуда её снимает cancelGuardedTimeout) и в список поколения, чтобы
+// следующий экземпляр сценария её снял. Проверка поколения в колбэке — страховка
+// на случай, когда global недоступен и снимать задачи некому.
+function scheduleGuardedTimeout(variables, timer, delayMs, callback) {
     const subGen = variables.subGen;
     let task = setTimeout(() => {
         forgetTimerTask(subGen, task);
+        variables[timer.field] = undefined;
         if (isStaleSubscription(subGen)) {
             return;
         }
         callback();
     }, delayMs);
+    variables[timer.field] = task;
     rememberTimerTask(subGen, task);
-    return task;
 }
 
-// Единственная точка, где сценарий снимает таймер: снятая задача должна уйти
-// и из списка поколения, иначе он растёт до перезагрузки хаба.
-function cancelGuardedTimeout(variables, task) {
+// Единственная точка, где сценарий снимает таймер. Задача уходит и из списка
+// поколения, иначе он растёт до перезагрузки хаба.
+function cancelGuardedTimeout(variables, options, logSource, timer) {
+    const task = variables[timer.field];
     if (!task) {
         return;
     }
+    variables[timer.field] = undefined;
     clearTimeout(task);
     forgetTimerTask(variables.subGen, task);
+    logInfo(timer.clearedText, logSource, options.debug);
 }
 
 function rememberTimerTask(subGen, task) {
@@ -369,6 +358,9 @@ function isStaleSubscription(subGen) {
 }
 
 function handleExternalCharacteristicEvent(src, val, variables, options) {
+    // Сценарий уже работает: следующий trigger — событие, а не запуск.
+    variables.scenarioStarted = true;
+
     const svc = src.getService();
     if (!svc) {
         return;
@@ -393,7 +385,7 @@ function handleExternalCharacteristicEvent(src, val, variables, options) {
         return;
     }
 
-    if (isManualControlOption(options, uuid)) {
+    if (isSlotOption(options, "manualControl", MAX_MANUAL_CONTROL_SLOTS, uuid)) {
         if (isManualInputBlockedByGate(options)) {
             logInfo("Ручной вход проигнорирован: выключатель «Разрешение автоматики» запрещает автоматику (опция «Также не реагировать на ручные входы»)", src, options.debug);
         } else if (handleManualControlEvent(src, uuid, val, st, ct, variables, options)) {
@@ -401,19 +393,16 @@ function handleExternalCharacteristicEvent(src, val, variables, options) {
         }
     }
 
-    if (isMotionSlotOption(options, uuid)) {
+    if (isSlotOption(options, "motion", MAX_MOTION_SLOTS, uuid)) {
         logInfo("Датчик активности сработал: " + (isSensorActiveValue(st, val, options) ? "активность" : "нет активности"), src, options.debug);
         onOccupancyChanged(variables, options, src);
     }
 }
 
-// ----------------------------------------------------------------------------
-// Ручные входы и «рубильник» автоматики (§7)
-// ----------------------------------------------------------------------------
+// --- Ручные входы и «рубильник» автоматики (§7) -----------------------------
 
-// Обрабатывает событие ручного входа. Возвращает true, если событие относится к
-// ручному управлению и обработано; false — если тип события к ручному управлению
-// не относится (тогда событие идёт дальше, например в ветку датчиков активности).
+// Возвращает true, если событие обработано как ручное; false — если тип события
+// к ручному управлению не относится и должен идти дальше, в ветку датчиков.
 function handleManualControlEvent(src, uuid, val, st, ct, variables, options) {
     if (st === HS.Switch && ct === HC.On) {
         if (val === true) {
@@ -470,25 +459,18 @@ function manualToggleFromButtonOrPulse(variables, options, logSource) {
     manualTurnOff(variables, options, logSource);
 }
 
-// fromManualSwitch — включение пришло от ручного входа типа «Выключатель».
-// Чем два вида ручного включения различаются для сеанса — см. beginRun.
+// fromManualSwitch — включение пришло от ручного входа типа «Выключатель»;
+// чем это отличается для сеанса, разбирает beginRun.
 function manualTurnOn(variables, options, logSource, fromManualSwitch) {
     clearOffTimer(variables, options, logSource);
     releaseAutoOnLock(variables, options, logSource);
 
     setFanOn(variables, options, logSource, true, fromManualSwitch === true ? RUN_BY_MANUAL_SWITCH : RUN_BY_MANUAL);
-
-    if (isAnyManualSwitchOn(options)) {
-        return;
-    }
-    if (!computeOccupancyActive(options) && !variables.manualHold) {
-        armOffTimer(variables, options, logSource);
-    }
+    armOffTimer(variables, options, logSource);
 }
 
-// fromManualSwitch — выключение пришло от ручного входа типа «Выключатель».
-// Для него Off — штатное состояние автоматики, а не «выключили вручную»,
-// поэтому блокировка авто-включения не ставится (§7).
+// Для ручного входа типа «Выключатель» Off — штатное состояние автоматики,
+// а не «выключили вручную»: блокировка авто-включения не ставится (§7).
 function manualTurnOff(variables, options, logSource, fromManualSwitch) {
     clearOffTimer(variables, options, logSource);
     if (fromManualSwitch !== true) {
@@ -497,9 +479,8 @@ function manualTurnOff(variables, options, logSource, fromManualSwitch) {
     setFanOn(variables, options, logSource, false);
 }
 
-// Ручное выключение, пока ещё есть повод работать (активность датчиков или
-// высокая влажность): при включённой опции ставим блокировку авто-включения.
-// Она держится до момента, когда вытяжка погасла бы сама.
+// Выключили вручную, пока повод работать ещё есть (активность или высокая
+// влажность) — блокировка держится до момента, когда вытяжка погасла бы сама.
 function registerManualOff(variables, options, logSource) {
     if (options.noAutoOnAfterManualOff !== true) {
         return;
@@ -528,28 +509,33 @@ function isAutomationAllowed(options) {
     return options.gateAutoSwitchInvert === true ? !gateIsOn : gateIsOn;
 }
 
-// Ручные входы (выключатели, кнопки, импульсы, контакты) игнорируются целиком,
-// если включена опция «Также не реагировать на ручные входы» и выключатель
-// «Разрешение автоматики» сейчас запрещает автоматику. Если разрешающий
-// выключатель не выбран — блокировки нет.
+// Ручные входы игнорируются целиком, только если опция включена И «Разрешение
+// автоматики» сейчас запрещает автоматику. Выключатель не выбран — запрета нет.
 function isManualInputBlockedByGate(options) {
     return options.gateBlocksManualInputs === true && !isAutomationAllowed(options);
 }
 
-// ----------------------------------------------------------------------------
-// Присутствие (§2, §3)
-// ----------------------------------------------------------------------------
+// --- Присутствие (§2, §3) ---------------------------------------------------
 
-// Активное значение датчика активности: движение = true, присутствие = 1,
-// контакт «Открыто» = 1 (или «Закрыто» = 0 при инверсии, G06).
+function occupancySensorKind(serviceType) {
+    for (let i = 0; i < OCCUPANCY_SENSOR_KINDS.length; i++) {
+        if (OCCUPANCY_SENSOR_KINDS[i].service === serviceType) {
+            return OCCUPANCY_SENSOR_KINDS[i];
+        }
+    }
+    return undefined;
+}
+
+// Инверсия переворачивает только датчик открытия: занятым считается «Закрыто» (G06).
 function isSensorActiveValue(serviceType, value, options) {
-    if (serviceType === HS.MotionSensor) {
-        return value === true;
+    const kind = occupancySensorKind(serviceType);
+    if (!kind) {
+        return false;
     }
-    if (serviceType === HS.ContactSensor) {
-        return value === (options.contactInverted === true ? 0 : 1);
+    if (serviceType === HS.ContactSensor && options.contactInverted === true) {
+        return value === 0;
     }
-    return value === 1;
+    return value === kind.activeValue;
 }
 
 function computeOccupancyActive(options) {
@@ -562,19 +548,12 @@ function computeOccupancyActive(options) {
         if (!svc) {
             continue;
         }
-        const t = svc.getType();
-        if (t === HS.MotionSensor) {
-            if (readCharacteristicValue(svc, HC.MotionDetected) === true) {
-                return true;
-            }
-        } else if (t === HS.OccupancySensor) {
-            if (readCharacteristicValue(svc, HC.OccupancyDetected) === 1) {
-                return true;
-            }
-        } else if (t === HS.ContactSensor) {
-            if (isSensorActiveValue(t, readCharacteristicValue(svc, HC.ContactSensorState), options)) {
-                return true;
-            }
+        const kind = occupancySensorKind(svc.getType());
+        if (!kind) {
+            continue;
+        }
+        if (isSensorActiveValue(kind.service, readCharacteristicValue(svc, kind.characteristic), options)) {
+            return true;
         }
     }
     return false;
@@ -583,8 +562,8 @@ function computeOccupancyActive(options) {
 function onOccupancyChanged(variables, options, logSource) {
     if (computeOccupancyActive(options)) {
         clearOffTimer(variables, options, logSource);
-        clearPresenceResetTimer(variables, options, logSource);
-        clearAutoOnLockTimer(variables, options, logSource);
+        cancelGuardedTimeout(variables, options, logSource, TIMER_PRESENCE_RESET);
+        restartAutoOnLockSilence(variables, options, logSource);
         startPresenceAccumulationIfActive(variables, options, logSource);
         tryAutoTurnOn(variables, options, logSource);
         return;
@@ -594,18 +573,17 @@ function onOccupancyChanged(variables, options, logSource) {
     armPresenceResetTimer(variables, options, logSource);
     scheduleAutoOnLockRelease(variables, options, logSource);
 
-    if (!isFanCurrentlyOn(variables)) {
-        return;
+    if (isFanCurrentlyOn(variables)) {
+        armOffTimer(variables, options, logSource);
     }
-    if (variables.manualHold) {
-        logInfo("Активности нет, но включено ручное удержание — гасит только предельный таймер", logSource, options.debug);
-        return;
-    }
-    armOffTimer(variables, options, logSource);
+}
+
+function hasPresenceSession(variables) {
+    return variables.presenceSinceAt !== undefined && variables.presenceSinceAt !== null;
 }
 
 function startPresenceAccumulationIfActive(variables, options, logSource) {
-    if (variables.presenceSinceAt !== undefined && variables.presenceSinceAt !== null) {
+    if (hasPresenceSession(variables)) {
         return;
     }
     if (!computeOccupancyActive(options)) {
@@ -616,58 +594,41 @@ function startPresenceAccumulationIfActive(variables, options, logSource) {
     armOnDelayTimer(variables, options, logSource);
 }
 
-// Присутствие «набралось»: текущая сессия присутствия длится дольше «Задержки
-// включения». При нулевой задержке набирается сразу, с первой же активности.
-function isPresenceReady(variables, options) {
-    const since = variables.presenceSinceAt;
-    if (since === undefined || since === null) {
-        return false;
-    }
-    const needMs = numberOption(options, "onDelaySeconds", DEFAULT_ON_DELAY_SECONDS) * SECOND_MS;
-    if (needMs <= 0) {
-        return true;
-    }
-    return Date.now() - since >= needMs - PRESENCE_READY_TOLERANCE_MS;
+// Присутствие «набралось»: сессия идёт, а таймер накопления уже отработал — или
+// не заводился вовсе при нулевой «Задержке включения». Факт набранного присутствия
+// держит один только таймер: второго счёта времени нет, и расходиться нечему.
+function isPresenceReady(variables) {
+    return hasPresenceSession(variables) && !variables[TIMER_ON_DELAY.field];
 }
 
 function armOnDelayTimer(variables, options, logSource) {
-    clearOnDelayTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_ON_DELAY);
     const sec = numberOption(options, "onDelaySeconds", DEFAULT_ON_DELAY_SECONDS);
     if (sec <= 0) {
         // Накопление не нужно: включение проверяется тут же, в onOccupancyChanged.
         return;
     }
     logInfo("Накопление присутствия: попробую включить через " + sec + " с, если присутствие не прервётся", logSource, options.debug);
-    variables.onDelayTimerId = scheduleGuardedTimeout(variables, sec * SECOND_MS, () => {
-        variables.onDelayTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_ON_DELAY, sec * SECOND_MS, () => {
         logInfo("Присутствие набрано — пробую включить вытяжку", variables.cachedFanService, options.debug);
         tryAutoTurnOn(variables, options, variables.cachedFanService);
     });
-}
-
-function clearOnDelayTimer(variables, options, logSource) {
-    if (variables.onDelayTimerId) {
-        logInfo("Таймер накопления присутствия сброшен", logSource, options.debug);
-        cancelGuardedTimeout(variables, variables.onDelayTimerId);
-        variables.onDelayTimerId = undefined;
-    }
 }
 
 // Сессия присутствия сбрасывается не сразу: короткий провал импульсного PIR не
 // должен обнулять отсчёт. Сброс наступает, только если активности нет дольше
 // «Задержки выключения» (R03.1, R03.2).
 function armPresenceResetTimer(variables, options, logSource) {
-    if (variables.presenceSinceAt === undefined || variables.presenceSinceAt === null) {
+    if (!hasPresenceSession(variables)) {
         return;
     }
-    clearPresenceResetTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_PRESENCE_RESET);
     const sec = numberOption(options, "offDelaySeconds", DEFAULT_OFF_DELAY_SECONDS);
     if (sec <= 0) {
         resetPresenceSession(variables, options, logSource);
         return;
     }
-    variables.presenceResetTimerId = scheduleGuardedTimeout(variables, sec * SECOND_MS, () => {
-        variables.presenceResetTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_PRESENCE_RESET, sec * SECOND_MS, () => {
         if (computeOccupancyActive(options)) {
             return;
         }
@@ -675,26 +636,15 @@ function armPresenceResetTimer(variables, options, logSource) {
     });
 }
 
-function clearPresenceResetTimer(variables, options, logSource) {
-    if (variables.presenceResetTimerId) {
-        cancelGuardedTimeout(variables, variables.presenceResetTimerId);
-        variables.presenceResetTimerId = undefined;
-        logInfo("Сброс накопления присутствия отменён: активность вернулась", logSource, options.debug);
-    }
-}
-
 function resetPresenceSession(variables, options, logSource) {
     variables.presenceSinceAt = undefined;
-    clearOnDelayTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_ON_DELAY);
     logInfo("Накопление присутствия обнулено: активности не было " + numberOption(options, "offDelaySeconds", DEFAULT_OFF_DELAY_SECONDS) + " с", logSource, options.debug);
 }
 
-// ----------------------------------------------------------------------------
-// Влажность (§4)
-// ----------------------------------------------------------------------------
+// --- Влажность (§4) ---------------------------------------------------------
 
-// Значение датчика влажности по UUID сервиса или undefined: сервис не выбран,
-// не найден, характеристики нет или значение не число.
+// undefined — сервис не выбран, не найден или значение не число.
 function readHumidity(uuid) {
     if (!uuid || uuid === "") {
         return undefined;
@@ -738,8 +688,7 @@ function isHumiditySatisfied(options) {
     return humidity <= computeEffectiveTarget(options);
 }
 
-// «Высокая влажность» — одно понятие и для включения по влажности (G01),
-// и для форсажа (G02).
+// «Высокая влажность» — одно понятие и для включения (G01), и для форсажа (G02).
 function isHumidityHigh(options) {
     const humidity = readHumidity(options.humiditySensor);
     if (humidity === undefined) {
@@ -763,15 +712,11 @@ function onHumidityChanged(variables, options, logSource) {
 }
 
 function isHumidityOption(options, serviceUuid) {
-    if (options.humiditySensor && options.humiditySensor === serviceUuid) {
-        return true;
-    }
-    return !!(options.referenceHumiditySensor && options.referenceHumiditySensor === serviceUuid);
+    return !!serviceUuid &&
+        (options.humiditySensor === serviceUuid || options.referenceHumiditySensor === serviceUuid);
 }
 
-// ----------------------------------------------------------------------------
-// Решение: включить / выключить (§5, §8)
-// ----------------------------------------------------------------------------
+// --- Решение: включить / выключить (§5, §8) ---------------------------------
 
 function tryAutoTurnOn(variables, options, logSource) {
     if (!variables.cachedFanService) {
@@ -799,7 +744,7 @@ function tryAutoTurnOn(variables, options, logSource) {
         return;
     }
 
-    const byPresence = isPresenceReady(variables, options);
+    const byPresence = isPresenceReady(variables);
     const byHumidity = options.humidityStartsFan === true && isHumidityHigh(options);
     if (!byPresence && !byHumidity) {
         logInfo("Авто-включение отклонено: присутствие ещё не набралось и высокой влажности нет", logSource, options.debug);
@@ -808,12 +753,9 @@ function tryAutoTurnOn(variables, options, logSource) {
 
     logInfo(byPresence ? "Включаю вытяжку: присутствие набрано" : "Включаю вытяжку: высокая влажность", logSource, options.debug);
     setFanOn(variables, options, logSource, true, RUN_BY_SENSOR);
-
     // Включение без активности датчиков (по влажности или на остатке сессии):
-    // таймер выключения заводится сразу, иначе гасить будет нечему.
-    if (!computeOccupancyActive(options)) {
-        armOffTimer(variables, options, logSource);
-    }
+    // таймер выключения нужен сразу, иначе гасить будет нечему.
+    armOffTimer(variables, options, logSource);
 }
 
 // silenceReached — тишина по датчикам уже набрана (сработал таймер выключения).
@@ -823,16 +765,9 @@ function tryAutoTurnOff(variables, options, logSource, silenceReached) {
     if (!isFanCurrentlyOn(variables)) {
         return;
     }
-    if (isAnyManualSwitchOn(options)) {
-        logInfo("Выключение отменено: ручной выключатель в On удерживает вытяжку", logSource, options.debug);
-        return;
-    }
-    if (variables.manualHold) {
-        logInfo("Выключение отменено: активно ручное удержание", logSource, options.debug);
-        return;
-    }
-    if (computeOccupancyActive(options)) {
-        logInfo("Выключение отменено: снова появилась активность датчиков", logSource, options.debug);
+    const hold = fanHoldReason(variables, options);
+    if (hold) {
+        logInfo("Выключение отменено: " + hold, logSource, options.debug);
         return;
     }
 
@@ -869,14 +804,30 @@ function minRunRemainingMs(variables, options) {
     return elapsed >= needMs ? 0 : needMs - elapsed;
 }
 
-// ----------------------------------------------------------------------------
-// Таймеры (§8)
-// ----------------------------------------------------------------------------
+// --- Таймеры (§8) -----------------------------------------------------------
 
+// Единственное место, где решается, держат ли вытяжку включённой: и «нужен ли
+// таймер выключения», и «можно ли выключать сейчас» — один и тот же вопрос.
+// Возвращает причину или "" — если не держат.
+function fanHoldReason(variables, options) {
+    if (isAnyManualSwitchOn(options)) {
+        return "ручной выключатель в On";
+    }
+    if (computeOccupancyActive(options)) {
+        return "датчики видят активность";
+    }
+    if (variables.manualHold) {
+        return "активно ручное удержание";
+    }
+    return "";
+}
+
+// Заводит таймер выключения, если вытяжку ничто не удерживает включённой.
 function armOffTimer(variables, options, logSource) {
     clearOffTimer(variables, options, logSource);
-    if (isAnyManualSwitchOn(options)) {
-        logInfo("Таймер выключения не нужен: ручной выключатель в On удерживает вытяжку", logSource, options.debug);
+    const hold = fanHoldReason(variables, options);
+    if (hold) {
+        logInfo("Таймер выключения не нужен: " + hold, logSource, options.debug);
         return;
     }
     const sec = numberOption(options, "offDelaySeconds", DEFAULT_OFF_DELAY_SECONDS);
@@ -891,8 +842,7 @@ function armOffTimer(variables, options, logSource) {
 
 function armOffTimerAfter(variables, options, logSource, delayMs) {
     clearOffTimer(variables, options, logSource);
-    variables.offTimerId = scheduleGuardedTimeout(variables, delayMs, () => {
-        variables.offTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_OFF, delayMs, () => {
         logInfo("Таймер выключения сработал", variables.cachedFanService, options.debug);
         tryAutoTurnOff(variables, options, variables.cachedFanService, true);
     });
@@ -900,35 +850,21 @@ function armOffTimerAfter(variables, options, logSource, delayMs) {
 
 function clearOffTimer(variables, options, logSource) {
     variables.offPending = false;
-    if (variables.offTimerId) {
-        logInfo("Таймер выключения сброшен", logSource, options.debug);
-        cancelGuardedTimeout(variables, variables.offTimerId);
-        variables.offTimerId = undefined;
-    }
+    cancelGuardedTimeout(variables, options, logSource, TIMER_OFF);
 }
 
-// Предельный таймер заводится при ЛЮБОМ включении вытяжки: по присутствию,
-// по влажности и ручном (R24i).
+// Заводится при ЛЮБОМ включении: по присутствию, по влажности и ручном (R24i).
 function armMaxRunTimer(variables, options, logSource) {
-    clearMaxRunTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_MAX_RUN);
     const minutes = numberOption(options, "maxRunMinutes", DEFAULT_MAX_RUN_MINUTES);
     if (minutes <= 0) {
         logInfo("Предельное время работы отключено (0 мин)", logSource, options.debug);
         return;
     }
     logInfo("Предельное время работы: выключу через " + minutes + " мин в любом случае", logSource, options.debug);
-    variables.maxRunTimerId = scheduleGuardedTimeout(variables, minutes * MINUTE_MS, () => {
-        variables.maxRunTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_MAX_RUN, minutes * MINUTE_MS, () => {
         onMaxRunReached(variables, options, variables.cachedFanService);
     });
-}
-
-function clearMaxRunTimer(variables, options, logSource) {
-    if (variables.maxRunTimerId) {
-        logInfo("Предельный таймер сброшен", logSource, options.debug);
-        cancelGuardedTimeout(variables, variables.maxRunTimerId);
-        variables.maxRunTimerId = undefined;
-    }
 }
 
 // Предел не проверяет ни влажность, ни присутствие, ни минимальное время.
@@ -950,54 +886,36 @@ function onMaxRunReached(variables, options, logSource) {
     scheduleAutoOnLockRelease(variables, options, logSource);
 }
 
-// Пауза (G05) не отключает автоматику до следующего события датчика: смысл
-// паузы — переждать и продолжить. Поэтому её окончание — такой же повод
-// проверить включение, как событие датчика; сам повод (набранное присутствие
-// или высокая влажность) проверит tryAutoTurnOn. Блокировка после предельного
-// таймера (§8) этим не затрагивается: она снимается своим путём.
+// Смысл паузы (G05) — переждать и продолжить, поэтому её окончание такой же повод
+// проверить включение, как событие датчика: сам повод проверит tryAutoTurnOn.
+// Блокировка после предельного таймера (§8) снимается своим путём.
 function armCooldown(variables, options, logSource) {
-    clearCooldownTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_COOLDOWN);
     const minutes = numberOption(options, "cooldownMinutes", DEFAULT_COOLDOWN_MINUTES);
     if (minutes <= 0) {
         return;
     }
     variables.cooldownUntil = Date.now() + minutes * MINUTE_MS;
     logInfo("Пауза перед повторным включением: " + minutes + " мин", logSource, options.debug);
-    variables.cooldownTimerId = scheduleGuardedTimeout(variables, minutes * MINUTE_MS, () => {
-        variables.cooldownTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_COOLDOWN, minutes * MINUTE_MS, () => {
         logInfo("Пауза истекла — проверяю, есть ли повод включить вытяжку", variables.cachedFanService, options.debug);
         tryAutoTurnOn(variables, options, variables.cachedFanService);
     });
 }
 
-function clearCooldownTimer(variables, options, logSource) {
-    if (variables.cooldownTimerId) {
-        logInfo("Отсчёт паузы перед повторным включением сброшен", logSource, options.debug);
-        cancelGuardedTimeout(variables, variables.cooldownTimerId);
-        variables.cooldownTimerId = undefined;
-    }
-}
-
 function isCooldownActive(variables) {
     const until = variables.cooldownUntil;
-    if (until === undefined || until === null) {
-        return false;
-    }
-    return Date.now() < until;
+    return until !== undefined && until !== null && Date.now() < until;
 }
 
-// ----------------------------------------------------------------------------
-// Блокировка авто-включения (§7 «выключили вручную», §8 «предельное время»)
-//
+// --- Блокировка авто-включения (§7 «выключили вручную», §8 «предельное время»)
 // Обе блокировки снимаются в один и тот же момент — «вытяжка погасла бы сама»:
-// активности нет дольше «Задержки выключения» И влажность в норме. Поэтому
-// механизм один на двоих, различаются только причина и текст в логе.
-// ----------------------------------------------------------------------------
+// активности нет дольше «Задержки выключения» И влажность в норме. Механизм
+// один на двоих, различаются только причина и текст в логе.
 
 function setAutoOnLock(variables, options, reason, logSource) {
-    clearAutoOnLockTimer(variables, options, logSource);
+    restartAutoOnLockSilence(variables, options, logSource);
     variables.autoOnLock = reason;
-    variables.autoOnLockSilent = false;
     logInfo(reason === LOCK_MAX_RUN
         ? "Блокировка авто-включения ВКЛ: сработало предельное время работы"
         : "Блокировка авто-включения ВКЛ: вытяжку выключили вручную", logSource, options.debug);
@@ -1005,29 +923,27 @@ function setAutoOnLock(variables, options, reason, logSource) {
 
 // Полное снятие блокировки — при любом включении вытяжки.
 function releaseAutoOnLock(variables, options, logSource) {
-    clearAutoOnLockTimer(variables, options, logSource);
+    restartAutoOnLockSilence(variables, options, logSource);
     if (variables.autoOnLock) {
         logInfo("Блокировка авто-включения снята: вытяжку включили", logSource, options.debug);
     }
     variables.autoOnLock = undefined;
 }
 
-function clearAutoOnLockTimer(variables, options, logSource) {
+// Отсчёт «тишины» начинается заново: снимается и таймер, и уже набранный признак
+// тишины — иначе следующая проверка сняла бы блокировку по старой тишине.
+function restartAutoOnLockSilence(variables, options, logSource) {
     variables.autoOnLockSilent = false;
-    if (variables.autoOnLockTimerId) {
-        logInfo("Блокировка авто-включения: отсчёт снятия отменён", logSource, options.debug);
-        cancelGuardedTimeout(variables, variables.autoOnLockTimerId);
-        variables.autoOnLockTimerId = undefined;
-    }
+    cancelGuardedTimeout(variables, options, logSource, TIMER_AUTO_ON_LOCK);
 }
 
-// Активность спала — запускаем отсчёт «тишины». Когда он истечёт, блокировка
-// снимется, если к тому моменту и влажность будет в норме.
+// Активность спала — пошёл отсчёт «тишины»: по нему блокировка снимется, если
+// к тому моменту и влажность будет в норме.
 function scheduleAutoOnLockRelease(variables, options, logSource) {
     if (!variables.autoOnLock) {
         return;
     }
-    clearAutoOnLockTimer(variables, options, logSource);
+    restartAutoOnLockSilence(variables, options, logSource);
     if (computeOccupancyActive(options)) {
         logInfo("Блокировка авто-включения держится: активность датчиков есть", logSource, options.debug);
         return;
@@ -1039,8 +955,7 @@ function scheduleAutoOnLockRelease(variables, options, logSource) {
         return;
     }
     logInfo("Блокировка авто-включения: активность спала, проверю снятие через " + sec + " с", logSource, options.debug);
-    variables.autoOnLockTimerId = scheduleGuardedTimeout(variables, sec * SECOND_MS, () => {
-        variables.autoOnLockTimerId = undefined;
+    scheduleGuardedTimeout(variables, TIMER_AUTO_ON_LOCK, sec * SECOND_MS, () => {
         if (computeOccupancyActive(options)) {
             logInfo("Блокировка авто-включения сохраняется: активность вернулась до истечения таймаута", variables.cachedFanService, options.debug);
             return;
@@ -1069,26 +984,16 @@ function tryReleaseAutoOnLock(variables, options, logSource) {
     logInfo("Блокировка авто-включения снята: вытяжка погасла бы сама", logSource, options.debug);
 }
 
-// ----------------------------------------------------------------------------
-// Привязанный сервис: чтение, запись, скорость (§1, §6)
-// ----------------------------------------------------------------------------
+// --- Привязанный сервис: чтение, запись, скорость (§1, §6) ------------------
 
 // Значение характеристики состояния приходит либо Boolean (On), либо 0/1 (Active).
 function normalizeOnValue(value) {
     return value === true || value === 1;
 }
 
-// Характеристика состояния вытяжки: On у Switch и FanBasic, Active у Fan.
-// Выбирается по тому, какая характеристика есть у сервиса.
+// Состояние вытяжки: On у Switch и FanBasic, Active у Fan.
 function getFanStateCharacteristic(svc) {
-    if (!svc) {
-        return undefined;
-    }
-    const on = getCharacteristicSafe(svc, HC.On);
-    if (on) {
-        return on;
-    }
-    return getCharacteristicSafe(svc, HC.Active);
+    return getCharacteristicSafe(svc, HC.On) || getCharacteristicSafe(svc, HC.Active);
 }
 
 function readFanOn(svc) {
@@ -1118,9 +1023,8 @@ function isFanCurrentlyOn(variables) {
     return readFanOn(variables.cachedFanService);
 }
 
-// Единственная точка переключения вытяжки: пишет характеристику и ведёт учёт
-// сеанса работы (время старта, предельный таймер, скорость).
-// runOrigin имеет смысл только при включении — см. beginRun.
+// Единственная точка переключения вытяжки: пишет характеристику и ведёт сеанс
+// работы. runOrigin имеет смысл только при включении — см. beginRun.
 function setFanOn(variables, options, logSource, on, runOrigin) {
     if (!writeFanOn(variables.cachedFanService, on, options, logSource)) {
         return false;
@@ -1133,14 +1037,13 @@ function setFanOn(variables, options, logSource, on, runOrigin) {
     return true;
 }
 
-// Начало сеанса работы. Все поля сеанса выставляются здесь и больше нигде:
-// вызывающим достаточно сказать, откуда пришло включение (RUN_BY_*).
+// Все поля сеанса выставляются здесь и больше нигде: вызывающему достаточно
+// сказать, откуда пришло включение (RUN_BY_*).
 function beginRun(variables, options, logSource, runOrigin) {
     applyManualHoldForRun(variables, options, logSource, runOrigin);
-    // Окно антидребезга ручных входов (§7) открывает только авто-включение по
-    // датчику, а закрывает только конец сеанса (endRun). Оно отсчитывается от
-    // момента включения, поэтому событие, которое вытяжку не переключило
-    // (ручной выключатель в On на уже включённой вытяжке), его не трогает.
+    // Окно антидребезга (§7) открывает только авто-включение по датчику и
+    // закрывает только endRun: событие, которое вытяжку не переключило, его
+    // не трогает.
     if (runOrigin === RUN_BY_SENSOR) {
         variables.lastSensorAutoOnAt = Date.now();
     }
@@ -1150,21 +1053,20 @@ function beginRun(variables, options, logSource, runOrigin) {
     applyFanSpeed(variables.cachedFanService, options, logSource);
 }
 
-// Конец сеанса работы. Зеркало beginRun: все поля сеанса гасятся здесь и
-// больше нигде, включая «ручное удержание» — оно живёт ровно один сеанс.
+// Зеркало beginRun: поля сеанса гасятся здесь и больше нигде, включая «ручное
+// удержание» — оно живёт ровно один сеанс.
 function endRun(variables, options, logSource) {
     variables.manualHold = false;
     variables.runStartedAt = undefined;
     variables.offPending = false;
-    // Окно антидребезга закрывается вместе с сеансом: у выключенной вытяжки
-    // глотать нажатие кнопки не за чем — включать её заново никто не мешает.
+    // У выключенной вытяжки глотать нажатие кнопки не за чем.
     variables.lastSensorAutoOnAt = undefined;
-    clearMaxRunTimer(variables, options, logSource);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_MAX_RUN);
 }
 
-// «Ручное удержание» (§7) поднимает только то включение, которое хаб видит как
-// ручное, и только при включённой опции. Перезапуск хаба состояние удержания
-// не меняет: что было до перезапуска, сценарию неизвестно.
+// «Ручное удержание» (§7) поднимает только включение, которое хаб видит как
+// ручное, и только при включённой опции. Перезапуск хаба удержание не меняет:
+// что было до него, сценарию неизвестно.
 function applyManualHoldForRun(variables, options, logSource, runOrigin) {
     if (runOrigin === RUN_BY_RESTART) {
         return;
@@ -1190,7 +1092,7 @@ function applyManualHoldForRun(variables, options, logSource, runOrigin) {
 }
 
 // Форсаж (G02): пока влажность высокая — скорость форсажа, иначе обычная.
-// Скорость никогда не пишется при выключенной вытяжке.
+// При выключенной вытяжке скорость не пишется никогда.
 function applyFanSpeed(svc, options, logSource) {
     if (options.boostEnabled !== true) {
         return;
@@ -1214,15 +1116,10 @@ function applyFanSpeed(svc, options, logSource) {
     logInfo("Скорость вытяжки: " + speed + " % (" + (high ? "форсаж, влажность высокая" : "обычная") + ")", logSource, options.debug);
 }
 
-// ----------------------------------------------------------------------------
-// Уведомление о недосушенной комнате (G03)
-// ----------------------------------------------------------------------------
+// --- Уведомление о недосушенной комнате (G03) -------------------------------
 
 function notifyIfStillHumid(options, logSource) {
-    if (options.notifyOnDryTimeout !== true) {
-        return;
-    }
-    if (!options.humiditySensor || options.humiditySensor === "") {
+    if (options.notifyOnDryTimeout !== true || !options.humiditySensor) {
         return;
     }
     const humidity = readHumidity(options.humiditySensor);
@@ -1278,13 +1175,10 @@ function toIdList(value) {
     return out;
 }
 
-// ----------------------------------------------------------------------------
-// Лог
-// ----------------------------------------------------------------------------
+// --- Лог --------------------------------------------------------------------
 
-// Поддерживает ленивые строки: если передана функция, она вызывается только
-// когда debug включён. Это спасает горячие пути от лишних вычислений
-// (computeOccupancyActive, readHumidity и т.п.) при выключенной отладке.
+// Ленивые строки: функция вызывается, только когда debug включён — иначе горячие
+// пути платили бы за computeOccupancyActive и readHumidity ради выключенного лога.
 function logInfo(textOrFn, source, show) {
     if (!show) {
         return;
@@ -1315,9 +1209,7 @@ function resolveDeviceName(source) {
     }
 }
 
-// ----------------------------------------------------------------------------
-// Доступ к устройствам и опциям
-// ----------------------------------------------------------------------------
+// --- Доступ к устройствам и опциям ------------------------------------------
 
 function getCharacteristicSafe(svc, characteristicType) {
     if (!svc) {
@@ -1355,8 +1247,7 @@ function getServiceFromListOption(options, optionKey) {
     return getServiceByUuid(options[optionKey]);
 }
 
-// Числовая опция с подстановкой значения по умолчанию: пустое или нечисловое
-// значение не должно превращать таймеры и пороги в NaN.
+// Пустое или нечисловое значение опции не должно превращать таймеры в NaN.
 function numberOption(options, optionKey, fallback) {
     const raw = options[optionKey];
     if (raw === undefined || raw === null || raw === "") {
@@ -1366,19 +1257,10 @@ function numberOption(options, optionKey, fallback) {
     return isNaN(num) ? fallback : num;
 }
 
-function isMotionSlotOption(options, serviceUuid) {
-    for (let i = 1; i <= MAX_MOTION_SLOTS; i++) {
-        const v = options["motion" + i];
-        if (v && v !== "" && v === serviceUuid) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function isManualControlOption(options, serviceUuid) {
-    for (let i = 1; i <= MAX_MANUAL_CONTROL_SLOTS; i++) {
-        const v = options["manualControl" + i];
+// Выбран ли этот сервис в одном из слотов опции («motion», «manualControl»).
+function isSlotOption(options, prefix, slots, serviceUuid) {
+    for (let i = 1; i <= slots; i++) {
+        const v = options[prefix + i];
         if (v && v !== "" && v === serviceUuid) {
             return true;
         }
@@ -1421,8 +1303,7 @@ function isSelfChanged(context) {
         elements[2] === elements[0];
 }
 
-// accessory можно передать явно, чтобы не звать service.getAccessory() повторно
-// (в горячем цикле аксессуар уже на руках). Без него — берём из сервиса.
+// accessory передают явно, когда он уже на руках: экономит вызов в горячем цикле.
 function getDeviceName(service, accessory) {
     if (!service) {
         return "";
@@ -1431,15 +1312,13 @@ function getDeviceName(service, accessory) {
     return buildDeviceName(acc.getRoom().getName(), acc.getName(), service.getName(), service.getUUID());
 }
 
-// Формат отображаемого имени в одном месте: "Комната -> Имя [Сервис] (uuid)".
-// Если имя сервиса совпадает с именем аксессуара — сервис не дублируем.
+// "Комната -> Имя Сервис (uuid)"; совпадающее имя сервиса не дублируется.
 function buildDeviceName(roomName, accName, serviceName, uuid) {
     const label = accName === serviceName ? accName : accName + " " + serviceName;
     return roomName + " -> " + label + " (" + uuid + ")";
 }
 
-// Компаратор опций по русскому имени. Вынесен наверх, чтобы не создавать
-// функцию в цикле (память).
+// Вынесен наверх, чтобы не создавать функцию в цикле (память).
 function compareOptionByRuName(a, b) {
     return a.name.ru.localeCompare(b.name.ru);
 }
@@ -1527,9 +1406,12 @@ function collectServicesByTypes(typesByList) {
     return out;
 }
 
-// ----------------------------------------------------------------------------
-// Опции (§10)
-// ----------------------------------------------------------------------------
+// --- Опции (§10) ------------------------------------------------------------
+
+// Заголовок группы в UI — строка-статус без собственного значения.
+function optionGroupHeader(ru, en) {
+    return {name: {ru: ru, en: en}, type: "String", value: "", formType: "status"};
+}
 
 function createOptions() {
     const lists = collectServicesByTypes({
@@ -1553,12 +1435,7 @@ function createOptions() {
         formType: "status"
     };
 
-    options.groupSensors = {
-        name: {ru: "  ДАТЧИКИ АКТИВНОСТИ", en: "  ACTIVITY SENSORS"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupSensors = optionGroupHeader("  ДАТЧИКИ АКТИВНОСТИ", "  ACTIVITY SENSORS");
 
     for (let mi = 1; mi <= MAX_MOTION_SLOTS; mi++) {
         const motionOpt = {
@@ -1590,12 +1467,7 @@ function createOptions() {
         value: false
     };
 
-    options.groupHumidity = {
-        name: {ru: "  ВЛАЖНОСТЬ", en: "  HUMIDITY"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupHumidity = optionGroupHeader("  ВЛАЖНОСТЬ", "  HUMIDITY");
 
     options.humiditySensor = {
         name: {ru: "Датчик влажности", en: "Humidity sensor"},
@@ -1670,12 +1542,7 @@ function createOptions() {
         value: false
     };
 
-    options.groupSpeed = {
-        name: {ru: "  СКОРОСТЬ", en: "  SPEED"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupSpeed = optionGroupHeader("  СКОРОСТЬ", "  SPEED");
 
     options.boostEnabled = {
         name: {ru: "Форсаж при высокой влажности", en: "Boost on high humidity"},
@@ -1713,12 +1580,7 @@ function createOptions() {
         step: 1
     };
 
-    options.groupManualControl = {
-        name: {ru: "  РУЧНЫЕ ВХОДЫ", en: "  MANUAL INPUTS"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupManualControl = optionGroupHeader("  РУЧНЫЕ ВХОДЫ", "  MANUAL INPUTS");
 
     for (let hi = 1; hi <= MAX_MANUAL_CONTROL_SLOTS; hi++) {
         const manualOpt = {
@@ -1740,12 +1602,7 @@ function createOptions() {
         options["manualControl" + hi] = manualOpt;
     }
 
-    options.groupAutomationLimits = {
-        name: {ru: "  РАЗРЕШЕНИЕ АВТОМАТИКИ", en: "  ALLOW AUTOMATION"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupAutomationLimits = optionGroupHeader("  РАЗРЕШЕНИЕ АВТОМАТИКИ", "  ALLOW AUTOMATION");
 
     options.gateAutoSwitch = {
         name: {ru: "Разрешение автоматики", en: "Allow automation"},
@@ -1779,12 +1636,7 @@ function createOptions() {
         value: false
     };
 
-    options.groupManualHold = {
-        name: {ru: "  РУЧНОЕ УДЕРЖАНИЕ", en: "  MANUAL HOLD"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupManualHold = optionGroupHeader("  РУЧНОЕ УДЕРЖАНИЕ", "  MANUAL HOLD");
 
     options.noAutoOffWhenManualOn = {
         name: {
@@ -1825,12 +1677,7 @@ function createOptions() {
         value: true
     };
 
-    options.groupTimers = {
-        name: {ru: "  ТАЙМЕРЫ", en: "  TIMERS"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupTimers = optionGroupHeader("  ТАЙМЕРЫ", "  TIMERS");
 
     options.onDelaySeconds = {
         name: {ru: "Задержка включения (с)", en: "On delay (sec)"},
@@ -1897,12 +1744,7 @@ function createOptions() {
         step: 1
     };
 
-    options.groupNotify = {
-        name: {ru: "  УВЕДОМЛЕНИЯ", en: "  NOTIFICATIONS"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupNotify = optionGroupHeader("  УВЕДОМЛЕНИЯ", "  NOTIFICATIONS");
 
     options.notifyOnDryTimeout = {
         name: {ru: "Уведомлять, если комната не высохла за предельное время", en: "Notify if the room is not dry within the maximum run time"},
@@ -1934,12 +1776,7 @@ function createOptions() {
         value: ""
     };
 
-    options.groupOther = {
-        name: {ru: "  ПРОЧЕЕ", en: "  OTHER"},
-        type: "String",
-        value: "",
-        formType: "status"
-    };
+    options.groupOther = optionGroupHeader("  ПРОЧЕЕ", "  OTHER");
 
     options.debug = {
         name: {ru: "Режим отладки", en: "Debug mode"},

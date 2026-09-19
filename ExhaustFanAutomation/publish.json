@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/ExhaustFanAutomation.js",
+      "type": "LOGIC",
+      "json": "ExhaustFanAutomation.json",
+      "primary": true
+    }
+  ]
+}

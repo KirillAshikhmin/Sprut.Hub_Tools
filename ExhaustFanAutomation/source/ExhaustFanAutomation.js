@@ -21,6 +21,19 @@ const PRESENCE_READY_TOLERANCE_MS = 50;
 const LOCK_MANUAL_OFF = "manualOff";
 const LOCK_MAX_RUN = "maxRun";
 
+// Откуда пришло включение вытяжки. От этого зависят «ручное удержание» (§7) и
+// окно антидребезга ручных входов; остальные поля сеанса одинаковы для любого
+// включения. Разбирает эти значения beginRun — и больше никто.
+const RUN_BY_SENSOR = "sensor";
+const RUN_BY_MANUAL = "manual";
+const RUN_BY_MANUAL_SWITCH = "manualSwitch";
+const RUN_BY_EXTERNAL = "external";
+const RUN_BY_RESTART = "restart";
+
+/** Ключи общего хранилища global: счётчик поколений и задачи текущего поколения. */
+const SUB_GEN_KEY_PREFIX = "EFA_subGen_";
+const TIMERS_KEY_PREFIX = "EFA_timers_";
+
 // Значения по умолчанию заданы один раз: их же берут опции в UI и подстановка
 // при отсутствии значения в options (частично заполненные опции не должны
 // превращать таймеры в NaN).
@@ -85,7 +98,8 @@ info = {
         autoOnLockSilent: false,
         autoOnLockTimerId: undefined,
 
-        cooldownUntil: undefined
+        cooldownUntil: undefined,
+        cooldownTimerId: undefined
     }
 };
 
@@ -135,7 +149,7 @@ function trigger(source, value, variables, options, context) {
 // нет; выключенная — начинает накопление присутствия, если активность есть.
 function handleScenarioStart(variables, options, logSource, on) {
     if (on) {
-        beginRun(variables, options, logSource);
+        beginRun(variables, options, logSource, RUN_BY_RESTART);
         syncOffTimerWhenFanOnWithoutOccupancy(variables, options, logSource);
         return;
     }
@@ -147,18 +161,12 @@ function handleScenarioStart(variables, options, logSource, on) {
 // включения хабу неизвестно, поэтому сеанс работы начинается заново.
 function handleFanTurnedOnExternally(variables, options, logSource) {
     releaseAutoOnLock(variables, options, logSource);
-    if (options.noAutoOffWhenManualOn === true && !variables.manualHold) {
-        variables.manualHold = true;
-        logInfo("Вытяжку включили извне — включаю ручное удержание (опция «не выключать после ручного включения»)", logSource, options.debug);
-    }
-    beginRun(variables, options, logSource);
+    beginRun(variables, options, logSource, RUN_BY_EXTERNAL);
     syncOffTimerWhenFanOnWithoutOccupancy(variables, options, logSource);
 }
 
 function handleFanTurnedOffExternally(variables, options, logSource) {
     logInfo("Вытяжку выключили (вручную или извне) — сбрасываю ручное удержание и таймеры", logSource, options.debug);
-    variables.manualHold = false;
-    variables.lastSensorAutoOnAt = undefined;
     clearOffTimer(variables, options, logSource);
     endRun(variables, options, logSource);
     registerManualOff(variables, options, logSource);
@@ -203,7 +211,9 @@ function ensureExternalSubscription(variables, options) {
     // Если global недоступен — защита просто отключается.
     const subGen = nextSubscriptionGeneration(variables);
     // Поколение нужно не только подписке: таймеры прошлого поколения тоже живы
-    // (предельный — до 180 минут) и через старый variables писали бы в вытяжку.
+    // (предельный — до недели) и через старый variables писали бы в вытяжку.
+    // Их уже снял nextSubscriptionGeneration; здесь поколение запоминается,
+    // чтобы под ним заводились задачи текущего экземпляра сценария.
     variables.subGen = subGen;
 
     logInfo("Старт: подписка на датчики и ручные входы создана" + (subGen ? " (поколение " + subGen.gen + ")" : ""), variables.cachedFanService, options.debug);
@@ -243,36 +253,107 @@ function ensureExternalSubscription(variables, options) {
 }
 
 // Увеличивает счётчик «поколения» подписки в общем хранилище global, привязанный
-// к UUID управляемой вытяжки. Возвращает { key, gen } или null, если global
-// недоступен/не сохраняет значения (тогда защита от зависших подписок отключена).
+// к UUID управляемой вытяжки, и снимает задачи прошлых поколений. Возвращает
+// { key, gen, timersKey } или null, если global недоступен/не сохраняет значения
+// (тогда защита от зависших подписок и таймеров отключена).
 function nextSubscriptionGeneration(variables) {
     try {
         if (typeof global === "undefined" || global === null || !variables.cachedFanService) {
             return null;
         }
-        const key = "EFA_subGen_" + variables.cachedFanService.getUUID();
+        const uuid = variables.cachedFanService.getUUID();
+        const key = SUB_GEN_KEY_PREFIX + uuid;
         const next = (global[key] | 0) + 1;
         global[key] = next;
         if ((global[key] | 0) !== next) {
             return null;
         }
-        return {key: key, gen: next};
+        const timersKey = TIMERS_KEY_PREFIX + uuid;
+        cancelTimersOfPreviousGenerations(timersKey);
+        return {key: key, gen: next, timersKey: timersKey};
     } catch (e) {
         return null;
     }
 }
 
-// Таймер с проверкой поколения: колбэк, заведённый до пересохранения сценария,
-// молча ничего не делает — ровно как устаревшая подписка. Иначе он управлял бы
-// вытяжкой по устаревшим variables и options.
+// Таймеры прошлого экземпляра сценария снимаются, а не просто игнорируются при
+// срабатывании: иначе колбэк дожил бы до своего срока, а у предельного таймера
+// это до недели. Список задач лежит в global, а не в variables: у нового
+// экземпляра variables свежие, и дотянуться до старых задач больше нечем.
+function cancelTimersOfPreviousGenerations(timersKey) {
+    const pending = global[timersKey];
+    global[timersKey] = [];
+    if (!pending || typeof pending.length !== "number") {
+        return;
+    }
+    for (let i = 0; i < pending.length; i++) {
+        try {
+            clearTimeout(pending[i]);
+        } catch (e) {
+            // Задача уже отработала — снимать нечего.
+        }
+    }
+}
+
+// Единственная точка, где сценарий заводит таймер. Задача попадает в список
+// текущего поколения, чтобы следующий экземпляр сценария её снял; проверка
+// поколения в колбэке остаётся страховкой на случай, когда global недоступен
+// и снимать задачи некому.
 function scheduleGuardedTimeout(variables, delayMs, callback) {
     const subGen = variables.subGen;
-    return setTimeout(() => {
+    let task = setTimeout(() => {
+        forgetTimerTask(subGen, task);
         if (isStaleSubscription(subGen)) {
             return;
         }
         callback();
     }, delayMs);
+    rememberTimerTask(subGen, task);
+    return task;
+}
+
+// Единственная точка, где сценарий снимает таймер: снятая задача должна уйти
+// и из списка поколения, иначе он растёт до перезагрузки хаба.
+function cancelGuardedTimeout(variables, task) {
+    if (!task) {
+        return;
+    }
+    clearTimeout(task);
+    forgetTimerTask(variables.subGen, task);
+}
+
+function rememberTimerTask(subGen, task) {
+    if (!subGen || !task) {
+        return;
+    }
+    try {
+        const pending = global[subGen.timersKey];
+        if (pending && typeof pending.push === "function") {
+            pending.push(task);
+            return;
+        }
+        global[subGen.timersKey] = [task];
+    } catch (e) {
+        // global недоступен — защита от зависших таймеров просто не работает.
+    }
+}
+
+function forgetTimerTask(subGen, task) {
+    if (!subGen || !task) {
+        return;
+    }
+    try {
+        const pending = global[subGen.timersKey];
+        if (!pending || typeof pending.indexOf !== "function") {
+            return;
+        }
+        const at = pending.indexOf(task);
+        if (at >= 0) {
+            pending.splice(at, 1);
+        }
+    } catch (e) {
+        // global недоступен — список задач поколения вести негде.
+    }
 }
 
 // true, если эта подписка устарела — появилась более новая (сценарий пересохранён).
@@ -390,25 +471,12 @@ function manualToggleFromButtonOrPulse(variables, options, logSource) {
 }
 
 // fromManualSwitch — включение пришло от ручного входа типа «Выключатель».
-// Такое включение НЕ активирует «ручное удержание»: пока выключатель в On,
-// вытяжку и так не гасят ни таймер выключения, ни предельный таймер
-// (все они проверяют isAnyManualSwitchOn).
+// Чем два вида ручного включения различаются для сеанса — см. beginRun.
 function manualTurnOn(variables, options, logSource, fromManualSwitch) {
     clearOffTimer(variables, options, logSource);
-    variables.lastSensorAutoOnAt = undefined;
     releaseAutoOnLock(variables, options, logSource);
 
-    if (fromManualSwitch === true) {
-        variables.manualHold = false;
-        logInfo("Вытяжка следует за ручным выключателем — таймеры выключения не действуют, пока он в On", logSource, options.debug);
-    } else if (options.noAutoOffWhenManualOn === true) {
-        variables.manualHold = true;
-        logInfo("Ручное удержание ВКЛ: опция «не выключать после ручного включения»", logSource, options.debug);
-    } else {
-        variables.manualHold = false;
-    }
-
-    setFanOn(variables, options, logSource, true);
+    setFanOn(variables, options, logSource, true, fromManualSwitch === true ? RUN_BY_MANUAL_SWITCH : RUN_BY_MANUAL);
 
     if (isAnyManualSwitchOn(options)) {
         return;
@@ -423,8 +491,6 @@ function manualTurnOn(variables, options, logSource, fromManualSwitch) {
 // поэтому блокировка авто-включения не ставится (§7).
 function manualTurnOff(variables, options, logSource, fromManualSwitch) {
     clearOffTimer(variables, options, logSource);
-    variables.lastSensorAutoOnAt = undefined;
-    variables.manualHold = false;
     if (fromManualSwitch !== true) {
         registerManualOff(variables, options, logSource);
     }
@@ -582,7 +648,7 @@ function armOnDelayTimer(variables, options, logSource) {
 function clearOnDelayTimer(variables, options, logSource) {
     if (variables.onDelayTimerId) {
         logInfo("Таймер накопления присутствия сброшен", logSource, options.debug);
-        clearTimeout(variables.onDelayTimerId);
+        cancelGuardedTimeout(variables, variables.onDelayTimerId);
         variables.onDelayTimerId = undefined;
     }
 }
@@ -611,7 +677,7 @@ function armPresenceResetTimer(variables, options, logSource) {
 
 function clearPresenceResetTimer(variables, options, logSource) {
     if (variables.presenceResetTimerId) {
-        clearTimeout(variables.presenceResetTimerId);
+        cancelGuardedTimeout(variables, variables.presenceResetTimerId);
         variables.presenceResetTimerId = undefined;
         logInfo("Сброс накопления присутствия отменён: активность вернулась", logSource, options.debug);
     }
@@ -740,10 +806,8 @@ function tryAutoTurnOn(variables, options, logSource) {
         return;
     }
 
-    variables.lastSensorAutoOnAt = Date.now();
-    variables.manualHold = false;
     logInfo(byPresence ? "Включаю вытяжку: присутствие набрано" : "Включаю вытяжку: высокая влажность", logSource, options.debug);
-    setFanOn(variables, options, logSource, true);
+    setFanOn(variables, options, logSource, true, RUN_BY_SENSOR);
 
     // Включение без активности датчиков (по влажности или на остатке сессии):
     // таймер выключения заводится сразу, иначе гасить будет нечему.
@@ -838,7 +902,7 @@ function clearOffTimer(variables, options, logSource) {
     variables.offPending = false;
     if (variables.offTimerId) {
         logInfo("Таймер выключения сброшен", logSource, options.debug);
-        clearTimeout(variables.offTimerId);
+        cancelGuardedTimeout(variables, variables.offTimerId);
         variables.offTimerId = undefined;
     }
 }
@@ -862,7 +926,7 @@ function armMaxRunTimer(variables, options, logSource) {
 function clearMaxRunTimer(variables, options, logSource) {
     if (variables.maxRunTimerId) {
         logInfo("Предельный таймер сброшен", logSource, options.debug);
-        clearTimeout(variables.maxRunTimerId);
+        cancelGuardedTimeout(variables, variables.maxRunTimerId);
         variables.maxRunTimerId = undefined;
     }
 }
@@ -880,21 +944,38 @@ function onMaxRunReached(variables, options, logSource) {
     logInfo("Предельное время работы истекло — выключаю вытяжку", logSource, options.debug);
     notifyIfStillHumid(options, logSource);
 
-    variables.manualHold = false;
-    variables.lastSensorAutoOnAt = undefined;
     clearOffTimer(variables, options, logSource);
     setAutoOnLock(variables, options, LOCK_MAX_RUN, logSource);
     setFanOn(variables, options, logSource, false);
     scheduleAutoOnLockRelease(variables, options, logSource);
 }
 
+// Пауза (G05) не отключает автоматику до следующего события датчика: смысл
+// паузы — переждать и продолжить. Поэтому её окончание — такой же повод
+// проверить включение, как событие датчика; сам повод (набранное присутствие
+// или высокая влажность) проверит tryAutoTurnOn. Блокировка после предельного
+// таймера (§8) этим не затрагивается: она снимается своим путём.
 function armCooldown(variables, options, logSource) {
+    clearCooldownTimer(variables, options, logSource);
     const minutes = numberOption(options, "cooldownMinutes", DEFAULT_COOLDOWN_MINUTES);
     if (minutes <= 0) {
         return;
     }
     variables.cooldownUntil = Date.now() + minutes * MINUTE_MS;
     logInfo("Пауза перед повторным включением: " + minutes + " мин", logSource, options.debug);
+    variables.cooldownTimerId = scheduleGuardedTimeout(variables, minutes * MINUTE_MS, () => {
+        variables.cooldownTimerId = undefined;
+        logInfo("Пауза истекла — проверяю, есть ли повод включить вытяжку", variables.cachedFanService, options.debug);
+        tryAutoTurnOn(variables, options, variables.cachedFanService);
+    });
+}
+
+function clearCooldownTimer(variables, options, logSource) {
+    if (variables.cooldownTimerId) {
+        logInfo("Отсчёт паузы перед повторным включением сброшен", logSource, options.debug);
+        cancelGuardedTimeout(variables, variables.cooldownTimerId);
+        variables.cooldownTimerId = undefined;
+    }
 }
 
 function isCooldownActive(variables) {
@@ -935,7 +1016,7 @@ function clearAutoOnLockTimer(variables, options, logSource) {
     variables.autoOnLockSilent = false;
     if (variables.autoOnLockTimerId) {
         logInfo("Блокировка авто-включения: отсчёт снятия отменён", logSource, options.debug);
-        clearTimeout(variables.autoOnLockTimerId);
+        cancelGuardedTimeout(variables, variables.autoOnLockTimerId);
         variables.autoOnLockTimerId = undefined;
     }
 }
@@ -1039,32 +1120,73 @@ function isFanCurrentlyOn(variables) {
 
 // Единственная точка переключения вытяжки: пишет характеристику и ведёт учёт
 // сеанса работы (время старта, предельный таймер, скорость).
-function setFanOn(variables, options, logSource, on) {
+// runOrigin имеет смысл только при включении — см. beginRun.
+function setFanOn(variables, options, logSource, on, runOrigin) {
     if (!writeFanOn(variables.cachedFanService, on, options, logSource)) {
         return false;
     }
     if (on === true) {
-        beginRun(variables, options, logSource);
+        beginRun(variables, options, logSource, runOrigin);
     } else {
         endRun(variables, options, logSource);
     }
     return true;
 }
 
-function beginRun(variables, options, logSource) {
+// Начало сеанса работы. Все поля сеанса выставляются здесь и больше нигде:
+// вызывающим достаточно сказать, откуда пришло включение (RUN_BY_*).
+function beginRun(variables, options, logSource, runOrigin) {
+    applyManualHoldForRun(variables, options, logSource, runOrigin);
+    // Окно антидребезга ручных входов (§7) открывает только авто-включение по
+    // датчику, а закрывает только конец сеанса (endRun). Оно отсчитывается от
+    // момента включения, поэтому событие, которое вытяжку не переключило
+    // (ручной выключатель в On на уже включённой вытяжке), его не трогает.
+    if (runOrigin === RUN_BY_SENSOR) {
+        variables.lastSensorAutoOnAt = Date.now();
+    }
     variables.runStartedAt = Date.now();
     variables.offPending = false;
     armMaxRunTimer(variables, options, logSource);
     applyFanSpeed(variables.cachedFanService, options, logSource);
 }
 
+// Конец сеанса работы. Зеркало beginRun: все поля сеанса гасятся здесь и
+// больше нигде, включая «ручное удержание» — оно живёт ровно один сеанс.
 function endRun(variables, options, logSource) {
+    variables.manualHold = false;
     variables.runStartedAt = undefined;
     variables.offPending = false;
     // Окно антидребезга закрывается вместе с сеансом: у выключенной вытяжки
     // глотать нажатие кнопки не за чем — включать её заново никто не мешает.
     variables.lastSensorAutoOnAt = undefined;
     clearMaxRunTimer(variables, options, logSource);
+}
+
+// «Ручное удержание» (§7) поднимает только то включение, которое хаб видит как
+// ручное, и только при включённой опции. Перезапуск хаба состояние удержания
+// не меняет: что было до перезапуска, сценарию неизвестно.
+function applyManualHoldForRun(variables, options, logSource, runOrigin) {
+    if (runOrigin === RUN_BY_RESTART) {
+        return;
+    }
+    if (runOrigin === RUN_BY_EXTERNAL) {
+        if (options.noAutoOffWhenManualOn === true && !variables.manualHold) {
+            variables.manualHold = true;
+            logInfo("Вытяжку включили извне — включаю ручное удержание (опция «не выключать после ручного включения»)", logSource, options.debug);
+        }
+        return;
+    }
+    if (runOrigin === RUN_BY_MANUAL && options.noAutoOffWhenManualOn === true) {
+        variables.manualHold = true;
+        logInfo("Ручное удержание ВКЛ: опция «не выключать после ручного включения»", logSource, options.debug);
+        return;
+    }
+    if (runOrigin === RUN_BY_MANUAL_SWITCH) {
+        // Пока выключатель в On, вытяжку и так не гасят ни таймер выключения,
+        // ни предельный таймер: все они проверяют isAnyManualSwitchOn.
+        logInfo("Вытяжка следует за ручным выключателем — таймеры выключения не действуют, пока он в On", logSource, options.debug);
+    }
+    variables.manualHold = false;
 }
 
 // Форсаж (G02): пока влажность высокая — скорость форсажа, иначе обычная.

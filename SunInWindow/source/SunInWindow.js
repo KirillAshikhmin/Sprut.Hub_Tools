@@ -546,7 +546,10 @@ function angularDifference(first, second) {
  * @returns {Object} рабочие настройки
  */
 function resolveSettings(options) {
-  const exactAzimuth = (options.windowAzimuth === undefined || options.windowAzimuth === null)
+  // Точный азимут — единственная необязательная опция, и любая пустая форма значит
+  // одно и то же "не задан": -1, null, undefined, пустая строка, одни пробелы.
+  // Ошибка — только непустое значение, которое не разбирается в число, или вне 0…360
+  const exactAzimuth = isBlankOption(options.windowAzimuth)
     ? AZIMUTH_NOT_SET
     : toNumber(options.windowAzimuth, NaN);
   // Любое значение, кроме сентинела, считается заданным — включая 0 (законный Север)
@@ -748,6 +751,18 @@ function toSignedAngle(degrees) {
 
 function isFiniteNumber(value) {
   return typeof value === "number" && isFinite(value);
+}
+
+/**
+ * Пустое значение опции: значения нет вовсе или строка без видимых символов.
+ * @param {*} value - значение опции
+ * @returns {boolean} true, если значение считается незаданным
+ */
+function isBlankOption(value) {
+  if (value === undefined || value === null) {
+    return true;
+  }
+  return typeof value === "string" && value.trim().length === 0;
 }
 
 /**

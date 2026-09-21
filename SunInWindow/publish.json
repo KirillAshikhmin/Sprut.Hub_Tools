@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/SunInWindow.js",
+      "type": "LOGIC",
+      "json": "SunInWindow.json",
+      "primary": true
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "Свет в окне — окно на юг, Москва",
+  "description": "Виртуальный выключатель, который включён, пока солнце светит в окно. Координаты Москвы, окно смотрит на юг, точный азимут не задан (-1) — направление берётся из списка. Логика сценария висит на характеристике On сервиса Switch.",
+  "options": {
+    "latitude": 55.7558,
+    "longitude": 37.6173,
+    "windowDirection": 180,
+    "windowAzimuth": -1,
+    "minSunAltitude": 5,
+    "maxAzimuthDeviation": 90,
+    "updateInterval": 1,
+    "allowManualControl": false,
+    "changeServiceName": true,
+    "invert": false
+  },
+  "variables": {},
+  "rooms": [{ "name": "Гостиная" }],
+  "accessories": [
+    {
+      "id": 100,
+      "name": "Солнце в окне",
+      "room": "Гостиная",
+      "target": true,
+      "services": [
+        {
+          "type": "AccessoryInformation",
+          "characteristics": [{ "type": "C_Online", "value": true }]
+        },
+        {
+          "type": "Switch",
+          "name": "Солнце в окне",
+          "characteristics": [{ "type": "On", "value": false }]
+        }
+      ]
+    }
+  ]
+}

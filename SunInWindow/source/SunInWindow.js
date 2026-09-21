@@ -45,7 +45,7 @@ info = {
   author: "@BOOMikru",
   onStart: true,
   sourceServices: [HS.Switch, HS.Outlet, HS.Lightbulb],
-  sourceCharacteristics: [HC.On, HC.Active],
+  sourceCharacteristics: [HC.On],
   options: {
     desc: {
       name: { ru: "  ОПИСАНИЕ", en: "  DESCRIPTION" },
@@ -260,6 +260,7 @@ const SERVICE_NAMES = {
 const OPTION_LIMITS = {
   LATITUDE: { name: "Широта", min: -90, max: 90 },
   LONGITUDE: { name: "Долгота", min: -180, max: 180 },
+  WINDOW_DIRECTION: { name: "Направление окна", values: WINDOW_DIRECTIONS.map(function (item) { return item.value; }) },
   WINDOW_AZIMUTH: { name: "Точный азимут окна", min: 0, max: 360 },
   MIN_ALTITUDE: { name: "Минимальная высота солнца", min: 0, max: 90 },
   MAX_DEVIATION: { name: "Максимальное отклонение от направления окна", min: 1, max: 90 }
@@ -290,7 +291,7 @@ function trigger(source, value, variables, options, context) {
     return;
   }
 
-  if (source.getType() !== HC.On && source.getType() !== HC.Active) {
+  if (source.getType() !== HC.On) {
     return;
   }
 
@@ -388,6 +389,26 @@ function cancelScheduledRecalculation(variables) {
   variables.timerTask = undefined;
 }
 
+// Защита поколениями живёт только в global. Если его нет, сценарий продолжает работу:
+// один флаг с лишним таймером лучше, чем отказ считать. Но потеря защиты не должна быть
+// молчаливой, а сообщение о ней — повторяться: строка пишется один раз на запуск скрипта,
+// иначе минутный таймер зальёт журнал
+let generationProtectionReported = false;
+
+/**
+ * Сообщает о потере защиты поколениями — один раз на запуск скрипта.
+ * @param {string} reason - что именно не получилось
+ */
+function reportGenerationProtectionLost(reason) {
+  if (generationProtectionReported) {
+    return;
+  }
+  generationProtectionReported = true;
+  logError("Защита поколениями таймеров недоступна (" + reason + "). Сценарий продолжает " +
+    "работу, но после пересохранения рядом с новым таймером может остаться старый — " +
+    "помогает перезапуск хаба.");
+}
+
 /**
  * Заводит поколение таймеров для этого экземпляра сценария.
  * @param {Object} source - характеристика, на которой висит сценарий
@@ -399,6 +420,9 @@ function ensureGeneration(source, variables) {
   }
   variables.generationKey = GENERATION_KEY_PREFIX + instanceKey(source);
   variables.generation = nextGeneration(variables.generationKey);
+  if (variables.generation === null) {
+    reportGenerationProtectionLost("поколение не записалось в global");
+  }
 }
 
 /**
@@ -452,6 +476,7 @@ function isStaleGeneration(key, generation) {
   try {
     return (global[key] | 0) !== generation;
   } catch (e) {
+    reportGenerationProtectionLost("поколение не читается из global");
     return false;
   }
 }
@@ -555,7 +580,9 @@ function resolveSettings(options) {
   // Любое значение, кроме сентинела, считается заданным — включая 0 (законный Север)
   // и заведомо неверное, которое дальше поймает проверка
   const azimuthIsSet = exactAzimuth !== AZIMUTH_NOT_SET;
-  const direction = toNumber(options.windowDirection, DEFAULTS.WINDOW_DIRECTION);
+  // Румб, как координаты и пороги, дефолтом не подменяется: направление, которого нет
+  // в списке, должно дойти до проверки и остановить сценарий, а не тихо стать Югом
+  const direction = toNumber(options.windowDirection, NaN);
   // Интервал пересчёта, в отличие от порогов, не проверяется, а зажимается:
   // неверный интервал не повод останавливать сценарий целиком
   const interval = clamp(
@@ -569,6 +596,7 @@ function resolveSettings(options) {
     longitude: toNumber(options.longitude, NaN),
     exactAzimuth: exactAzimuth,
     azimuthIsSet: azimuthIsSet,
+    windowDirection: direction,
     windowAzimuth: normalizeAngle(azimuthIsSet ? exactAzimuth : direction),
     // Пороги, как широта и долгота, не подменяются дефолтом: нечисловое значение
     // должно дойти до проверки и остановить сценарий, а не тихо стать другим порогом
@@ -586,6 +614,7 @@ function resolveSettings(options) {
 function validateSettings(settings) {
   return rangeError(OPTION_LIMITS.LATITUDE, settings.latitude)
     || rangeError(OPTION_LIMITS.LONGITUDE, settings.longitude)
+    || listError(OPTION_LIMITS.WINDOW_DIRECTION, settings.windowDirection)
     || (settings.azimuthIsSet ? rangeError(OPTION_LIMITS.WINDOW_AZIMUTH, settings.exactAzimuth) : null)
     || rangeError(OPTION_LIMITS.MIN_ALTITUDE, settings.minAltitude)
     || rangeError(OPTION_LIMITS.MAX_DEVIATION, settings.maxDeviation);
@@ -601,9 +630,35 @@ function rangeError(limit, value) {
   if (isFiniteNumber(value) && value >= limit.min && value <= limit.max) {
     return null;
   }
+  return invalidOptionError(limit, value, "Допустимый диапазон " + limit.min + "…" + limit.max);
+}
+
+/**
+ * Строит строку ошибки, если значение не входит в список допустимых. Румб — список
+ * в UI, но пришедшее значение всё равно проверяется: подмена неизвестного румба Югом
+ * дала бы молча неверный ответ вместо явной ошибки.
+ * @param {Object} limit - { name, values }
+ * @param {number} value - проверяемое значение
+ * @returns {string|null} строка ошибки, либо null
+ */
+function listError(limit, value) {
+  if (isFiniteNumber(value) && limit.values.indexOf(value) >= 0) {
+    return null;
+  }
+  return invalidOptionError(limit, value, "Допустимые значения: " + limit.values.join(", "));
+}
+
+/**
+ * Общая часть строки ошибки настройки.
+ * @param {Object} limit - { name }
+ * @param {*} value - проверяемое значение
+ * @param {string} allowed - описание допустимых значений
+ * @returns {string} строка ошибки
+ */
+function invalidOptionError(limit, value, allowed) {
   const shown = isFiniteNumber(value) ? String(value) : "не число";
   return "Неверное значение параметра «" + limit.name + "»: " + shown +
-    ". Допустимый диапазон " + limit.min + "…" + limit.max +
+    ". " + allowed +
     ". Сценарий ничего не делает до следующего сохранения или перезапуска хаба.";
 }
 
@@ -632,17 +687,9 @@ function applyState(source, options, sunIsInWindow) {
  */
 function setDeviceValue(source, value, invert) {
   if (invert) value = !value;
-  if (source.getType() === HC.On) {
-    if (source.getValue() != value) {
-      source.setValue(value);
-      return true;
-    }
-  } else if (source.getType() === HC.Active) {
-    const newValue = value ? 1 : 0;
-    if (source.getValue() != newValue) {
-      source.setValue(newValue);
-      return true;
-    }
+  if (source.getType() === HC.On && source.getValue() != value) {
+    source.setValue(value);
+    return true;
   }
   return false;
 }

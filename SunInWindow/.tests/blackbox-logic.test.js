@@ -68,7 +68,7 @@ function flagAt(ctx, iso, overrides, expected) {
 
 // Азимутонезависимая проверка высоты Солнца: при maxAzimuthDeviation = 90 хотя бы один
 // из четырёх кардинальных румбов заведомо укладывается в сектор при ЛЮБОМ азимуте Солнца.
-// Значит «хотя бы один румб дал true» эквивалентно «высота >= minSunAltitude» (§4.3, §17.6).
+// Значит «хотя бы один румб дал true» эквивалентно «высота >= minSunAltitude» (§4.3, §17.4).
 function anyCardinalOn(ctx, iso, overrides) {
   const rumbs = [0, 90, 180, 270];
   for (let i = 0; i < rumbs.length; i++) {
@@ -118,10 +118,12 @@ describe('§2 Триггеры и жизненный цикл', () => {
     expect(services).toContain(HS.Lightbulb);
   });
 
-  it('§2.1 триггерными характеристиками объявлены On и Active', ({ scenario }) => {
+  it('§2.1 триггерная характеристика ровно одна — On; Active у этих сервисов нет', ({ scenario }) => {
     const chars = scenario.info().sourceCharacteristics;
     expect(chars).toContain(HC.On);
-    expect(chars).toContain(HC.Active);
+    // Ни Switch, ни Outlet, ни Lightbulb не имеют характеристики Active: объявленная
+    // здесь, она давала бы пользователю несуществующую точку привязки.
+    expect(chars).not.toContain(HC.Active);
   });
 
   it('§2.2 onStart включён — сценарий считается при запуске хаба и сохранении', ({ scenario }) => {
@@ -237,6 +239,11 @@ describe('§4.3 Опора О3 — экватор, равноденствие, �
 
 describe('§4.3 Поправка D01 — 12:00 UTC в равноденствие не является солнечным полднем', () => {
   it('§4.2 в 12:00 UTC высота на экваторе НИЖЕ 89° (уравнение времени учтено)', (ctx) => {
+    // Контроль живости пробы — внутри этого же теста: в истинный солнечный полдень того же
+    // дня порог 89° она проходит (опора О3). Иначе «ниже 89°» было бы зелёным и у пробы,
+    // которая всегда отвечает «нет», и доказывал бы её живость только соседний тест.
+    expect(anyCardinalOn(ctx, EQ_EQUINOX_NOON,
+      { latitude: 0, longitude: 0, minSunAltitude: 89 })).toBe(true);
     expect(anyCardinalOn(ctx, EQ_EQUINOX_1200,
       { latitude: 0, longitude: 0, minSunAltitude: 89 })).toBe(false);
   });
@@ -649,12 +656,18 @@ function setup(ctx, iso, overrides, initialValue, serviceName) {
 // по итоговому значению и по подпискам «лишнюю» запись не увидеть. Перехватываем сам метод
 // на экземпляре: через него проходят и source.setValue(), и Hub.setCharacteristicValue(),
 // потому что оба пути ведут к одному и тому же объекту характеристики.
-function spyWrites(char) {
+// Единственный перехватчик записи на весь набор тестов сценария (тот же текст в
+// smoke.test.js: файлы тестов грузятся в изолированные контексты и не видят друг друга).
+// Считает обращения к методу, не подменяя поведение: нужен там, где проверяется
+// «не писали вообще», а не «значение осталось прежним». Аргументы уходят дальше как есть —
+// обёртка фиксированной арности молча теряла бы всё, кроме первого; в списке остаётся
+// первый аргумент, ради которого перехват и делается (значение или имя).
+function spyCalls(target, method) {
   const calls = [];
-  const original = char.setValue;
-  char.setValue = function (v) {
-    calls.push(v);
-    return original.call(char, v);
+  const original = target[method];
+  target[method] = function () {
+    calls.push(arguments[0]);
+    return original.apply(target, arguments);
   };
   return calls;
 }
@@ -685,7 +698,7 @@ describe('§10 Запись состояния и invert', () => {
 
   it('§10 смена состояния делает ровно одну запись в характеристику', (ctx) => {
     const s = setup(ctx, MSK_JUN_NOON, { windowDirection: 180, maxAzimuthDeviation: 5 }, false);
-    const writes = spyWrites(s.char);
+    const writes = spyCalls(s.char, 'setValue');
     s.run();
     expect(writes).toHaveLength(1);
     expect(writes[0]).toBe(true);
@@ -695,7 +708,7 @@ describe('§10 Запись состояния и invert', () => {
     const s = setup(ctx, MSK_JUN_NOON, { windowDirection: 180, maxAzimuthDeviation: 5 }, false);
     s.run();
     expect(s.char.getValue()).toBe(true);
-    const writes = spyWrites(s.char);   // считаем только то, что будет после первого расчёта
+    const writes = spyCalls(s.char, 'setValue');   // считаем только то, что будет после первого расчёта
     s.run();
     expect(writes).toHaveLength(0);
     expect(s.char.getValue()).toBe(true);
@@ -706,7 +719,7 @@ describe('§10 Запись состояния и invert', () => {
       { windowDirection: 180, maxAzimuthDeviation: 90, minSunAltitude: 5, updateInterval: 1 }, false);
     s.run();
     expect(s.char.getValue()).toBe(true);
-    const writes = spyWrites(s.char);
+    const writes = spyCalls(s.char, 'setValue');
     ctx.time.advance('5m');             // пять пересчётов, состояние всё то же
     expect(writes).toHaveLength(0);
   });
@@ -884,12 +897,14 @@ describe('§13.2 updateInterval зажимается, а не валит сце�
   });
 
   it('§13.2 updateInterval = 999 зажимается до 60: через 10 минут пересчёта ещё не было', (ctx) => {
+    // Выключатель стартует включённым: «false» после расчёта — это запись сценария, а не
+    // то же значение, с которого характеристика начинала.
     const s = setup(ctx, '2024-06-21T11:21:00Z',
-      { windowDirection: 270, maxAzimuthDeviation: 45, updateInterval: 999 }, false);
+      { windowDirection: 270, maxAzimuthDeviation: 45, updateInterval: 999 }, true);
     s.run();
-    expect(s.char.getValue()).toBe(false);
+    expect(s.char.getValue()).toBe(false);   // 11:21: отклонение 46,8° > 45° (§4.4)
     ctx.time.advance('10m');
-    expect(s.char.getValue()).toBe(false);
+    expect(s.char.getValue()).toBe(false);   // 11:31 дало бы true — пересчёта не было
   });
 
   it('§13.2 updateInterval = 999: через 61 минуту пересчёт случился', (ctx) => {
@@ -933,6 +948,53 @@ describe('§13.3 Поколения таймеров', () => {
     s.runFresh();
     ctx.time.advance('5m');
     expect(ctx.time.pendingCount()).toBe(1);
+  });
+});
+
+// Поколение таймера живёт в `global` (§13.3). Если запись туда недоступна, защита от
+// второго таймера пропадает — сценарий при этом обязан продолжить работу, но сказать об
+// этом в журнал: молча потерянная защита не отличима от работающей.
+// Ключ поколения не зашивается в тест: он вычитывается из `global` после исправного
+// запуска, а потом подменяется бросающим геттером.
+function poisonGenerationKeys(ctx) {
+  const keys = Object.keys(ctx.variables.global);
+  let poisoned = 0;
+  for (let i = 0; i < keys.length; i++) {
+    if (typeof ctx.variables.global[keys[i]] !== 'number') continue;
+    Object.defineProperty(ctx.variables.global, keys[i], {
+      configurable: true,
+      get: function () { throw new Error('global недоступен'); },
+    });
+    poisoned++;
+  }
+  return poisoned;
+}
+
+describe('§13.3 Потеря защиты поколениями видна в журнале', () => {
+  it('§13.3 недоступный global даёт строку в журнале, а сценарий продолжает работу', (ctx) => {
+    const s = setup(ctx, MSK_JUN_NOON,
+      { windowDirection: 180, maxAzimuthDeviation: 5, updateInterval: 1 }, false);
+    s.run();
+    expect(poisonGenerationKeys(ctx)).toBeGreaterThan(0);   // поколение действительно в global
+
+    ctx.logs.clear();
+    s.char.setValueSilent(false);   // заведомо неверное значение: расчёт обязан его перебить
+    s.runFresh();                   // пересохранение сценария на том же окне
+
+    expect(ctx.logs.containing('поколен')).toHaveLength(1);    // потеря защиты названа вслух
+    expect(s.char.getValue()).toBe(true);                      // расчёт всё равно выполнен
+    expect(ctx.time.pendingCount()).toBeGreaterThanOrEqual(1); // и таймер поставлен
+  });
+
+  it('§13.3 строка о потере защиты не повторяется на каждом тике таймера', (ctx) => {
+    const s = setup(ctx, MSK_JUN_NOON,
+      { windowDirection: 180, maxAzimuthDeviation: 5, updateInterval: 1 }, false);
+    s.run();
+    poisonGenerationKeys(ctx);
+    ctx.logs.clear();
+    s.runFresh();
+    ctx.time.advance('10m');
+    expect(ctx.logs.containing('поколен')).toHaveLength(1);
   });
 });
 
@@ -1000,8 +1062,8 @@ function expectSilentRefusal(ctx, overrides, nameRe) {
 // Пустая форма windowAzimuth = «не задан» (§6.2): направление берётся из румба, строки
 // ошибки нет, таймер пересчёта ставится. Проверяется двумя настройками сразу — румб Запад
 // в этот момент попадает, румб Север нет, — иначе «откат к румбу» было бы не отличить от
-// подстановки фиксированного направления. Отсутствие строки ошибки видно по числу записей
-// в лог: при успешном пересчёте пишется ровно строка состояния (§15), лишней строки нет.
+// подстановки фиксированного направления. «Ошибки не было» проверяется по уровню записи, а
+// не по общему числу строк: иначе любая новая отладочная строка валила бы эти тесты.
 function expectEmptyAzimuthFallsBackToRumb(ctx, emptyValue) {
   const hit = setup(ctx, MSK_JUN_AZ270, {
     windowDirection: 270, windowAzimuth: emptyValue,
@@ -1009,8 +1071,8 @@ function expectEmptyAzimuthFallsBackToRumb(ctx, emptyValue) {
   }, false);
   hit.run();
   expect(hit.char.getValue()).toBe(true);
-  expect(ctx.time.pendingCount()).toBe(1);   // таймер стоит ⇒ настройки приняты (§14, пункт 3)
-  expect(ctx.logs.all()).toHaveLength(1);    // только строка состояния, строки ошибки нет
+  expect(ctx.time.pendingCount()).toBe(1);        // таймер стоит ⇒ настройки приняты (§14, пункт 3)
+  expect(ctx.logs.byLevel('error')).toHaveLength(0);  // строки ошибки нет
 
   ctx.logs.clear();
   const miss = setup(ctx, MSK_JUN_AZ270, {
@@ -1018,8 +1080,8 @@ function expectEmptyAzimuthFallsBackToRumb(ctx, emptyValue) {
     maxAzimuthDeviation: 5, minSunAltitude: 5, updateInterval: 1,
   }, true);
   miss.run();
-  expect(miss.char.getValue()).toBe(false);  // тот же момент, другой румб — другой ответ
-  expect(ctx.logs.all()).toHaveLength(1);
+  expect(miss.char.getValue()).toBe(false);      // тот же момент, другой румб — другой ответ
+  expect(ctx.logs.byLevel('error')).toHaveLength(0);
 }
 
 function expectAccepted(ctx, overrides) {
@@ -1108,6 +1170,10 @@ describe('§14.1 Невалидный точный азимут — только
   it('§14.1 windowAzimuth = −5 (не пустая форма и не рабочий диапазон) → отказ', (ctx) => {
     expectSilentRefusal(ctx, { windowAzimuth: -5 }, /windowAzimuth|азимут/i);
   });
+
+  it('§14.1 windowAzimuth = −0,5 → отказ: пустая форма — ровно −1, а не «около нуля»', (ctx) => {
+    expectSilentRefusal(ctx, { windowAzimuth: -0.5 }, /windowAzimuth|азимут/i);
+  });
 });
 
 describe('§14.1 Невалидные пороги', () => {
@@ -1144,6 +1210,30 @@ describe('§14.1 Невалидные пороги', () => {
   });
 });
 
+describe('§14.1 Невалидное направление окна', () => {
+  it('§14.1 windowDirection = "юг" (не число) → отказ', (ctx) => {
+    expectSilentRefusal(ctx, { windowDirection: 'юг' }, /windowDirection|направлен/i);
+  });
+
+  it('§14.1 windowDirection = 37 (такого румба нет) → отказ', (ctx) => {
+    expectSilentRefusal(ctx, { windowDirection: 37 }, /windowDirection|направлен/i);
+  });
+
+  it('§14.1 windowDirection = null → отказ', (ctx) => {
+    expectSilentRefusal(ctx, { windowDirection: null }, /windowDirection|направлен/i);
+  });
+
+  it('§14.1 нечисловой румб не подменяется Югом молча', (ctx) => {
+    // Момент, в который окно на Юг дало бы «да»: молчаливая подмена была бы видна как
+    // поднятый флаг, а не как строка ошибки.
+    const s = setup(ctx, MSK_JUN_NOON,
+      { windowDirection: 'юг', maxAzimuthDeviation: 5, minSunAltitude: 5 }, false);
+    s.run();
+    expect(s.char.getValue()).toBe(false);
+    expect(ctx.logs.byLevel('error')).toHaveLength(1);
+  });
+});
+
 describe('§14.2 Границы диапазонов валидны', () => {
   it('§14.2 latitude = 90 принимается', (ctx) => { expectAccepted(ctx, { latitude: 90 }); });
   it('§14.2 latitude = −90 принимается', (ctx) => { expectAccepted(ctx, { latitude: -90 }); });
@@ -1156,11 +1246,35 @@ describe('§14.2 Границы диапазонов валидны', () => {
   it('§14.2 minSunAltitude = 90 принимается', (ctx) => { expectAccepted(ctx, { minSunAltitude: 90 }); });
   it('§14.2 maxAzimuthDeviation = 1 принимается', (ctx) => { expectAccepted(ctx, { maxAzimuthDeviation: 1 }); });
   it('§14.2 maxAzimuthDeviation = 90 принимается', (ctx) => { expectAccepted(ctx, { maxAzimuthDeviation: 90 }); });
+
+  const RUMBS = [0, 45, 90, 135, 180, 225, 270, 315];
+  for (let i = 0; i < RUMBS.length; i++) {
+    const rumb = RUMBS[i];
+    it('§14.2 windowDirection = ' + rumb + ' принимается', (ctx) => { expectAccepted(ctx, { windowDirection: rumb }); });
+  }
 });
 
 // ======================================================================================
 // §15. Логирование
 // ======================================================================================
+
+// Числа из строки журнала. Формат строки (слова, порядок, число знаков после запятой)
+// спецификацией не закреплён (§17.1), поэтому разбираются любые числа, а дробная часть
+// принимается и с точкой, и с запятой.
+function parseNumbers(message) {
+  const found = String(message).match(/-?\d+(?:[.,]\d+)?/g) || [];
+  const numbers = [];
+  for (let i = 0; i < found.length; i++) numbers.push(parseFloat(found[i].replace(',', '.')));
+  return numbers;
+}
+
+// Допуск — обещанная точность расчёта, 0,5° (§4.1).
+function hasNear(numbers, expected) {
+  for (let i = 0; i < numbers.length; i++) {
+    if (Math.abs(numbers[i] - expected) <= 0.5) return true;
+  }
+  return false;
+}
 
 describe('§15 Логирование', () => {
   it('§15 изменившийся пересчёт пишет строку с префиксом «☀️ Свет в окне.»', (ctx) => {
@@ -1169,13 +1283,19 @@ describe('§15 Логирование', () => {
     expect(ctx.logs.containing('☀️ Свет в окне.').length).toBeGreaterThan(0);
   });
 
-  it('§15 строка состояния несёт высоту, азимут и отклонение — не меньше трёх чисел', (ctx) => {
-    const s = setup(ctx, MSK_JUN_NOON, { windowDirection: 180, maxAzimuthDeviation: 5 }, false);
+  it('§15 строка состояния несёт высоту, азимут и отклонение — числа из §4.4', (ctx) => {
+    // Момент §4.4: высота 51,40°, азимут 135,02°; окно на Юг ⇒ отклонение 44,98°.
+    // Три величины разнесены настолько, что перепутанная попадёт мимо допуска.
+    const s = setup(ctx, MSK_JUN_AZ135,
+      { windowDirection: 180, maxAzimuthDeviation: 90, minSunAltitude: 5 }, false);
     s.run();
+    expect(s.char.getValue()).toBe(true);
     const entries = ctx.logs.containing('☀️ Свет в окне.');
-    expect(entries.length).toBeGreaterThan(0);
-    const numbers = entries[0].message.match(/-?\d+[.,]?\d*/g) || [];
-    expect(numbers.length).toBeGreaterThanOrEqual(3);
+    expect(entries).toHaveLength(1);
+    const numbers = parseNumbers(entries[0].message);
+    expect(hasNear(numbers, 51.40)).toBe(true);    // высота
+    expect(hasNear(numbers, 135.02)).toBe(true);   // азимут
+    expect(hasNear(numbers, 44.98)).toBe(true);    // отклонение от окна
   });
 
   it('§15 пересчёты по таймеру без смены состояния в лог не пишут', (ctx) => {
@@ -1212,7 +1332,7 @@ describe('§14 Невалидная настройка останавливае�
     });
 
     // Время идёт далеко за момент, когда солнце вошло бы в окно.
-    const writes = spyWrites(s.char);
+    const writes = spyCalls(s.char, 'setValue');
     ctx.time.advance('30m');
     expect(writes).toHaveLength(0);
     expect(s.char.getValue()).toBe(false);
@@ -1230,7 +1350,7 @@ describe('§14 Невалидная настройка останавливае�
     ctx.scenario.run({
       source: s.char, value: s.char.getValue(), variables: {}, options: broken, context: '',
     });
-    const writes = spyWrites(s.char);
+    const writes = spyCalls(s.char, 'setValue');
     ctx.time.advance('30m');
     expect(writes).toHaveLength(0);
     expect(ctx.time.pendingCount()).toBe(0);

@@ -28,14 +28,19 @@ function baseOptions(overrides) {
   return o;
 }
 
+// Единственный перехватчик записи на весь набор тестов сценария (тот же текст в
+// blackbox-logic.test.js: файлы тестов грузятся в изолированные контексты и не видят друг
+// друга).
 // Считает обращения к методу, не подменяя поведение: нужен там, где проверяется
-// "не писали вообще", а не "значение осталось прежним".
-function spyOn(target, method) {
+// «не писали вообще», а не «значение осталось прежним». Аргументы уходят дальше как есть —
+// обёртка фиксированной арности молча теряла бы всё, кроме первого; в списке остаётся
+// первый аргумент, ради которого перехват и делается (значение или имя).
+function spyCalls(target, method) {
   const calls = [];
-  const original = target[method].bind(target);
-  target[method] = function (arg) {
-    calls.push(arg);
-    return original(arg);
+  const original = target[method];
+  target[method] = function () {
+    calls.push(arguments[0]);
+    return original.apply(target, arguments);
   };
   return calls;
 }
@@ -121,7 +126,7 @@ describe('§9 Невалидные настройки', () => {
     time.set('2026-06-21T22:00:00Z');
     const sw = makeSwitch(hub, 10, true);
     const on = sw.char(HS.Switch, HC.On);
-    const writes = spyOn(on, 'setValue');
+    const writes = spyCalls(on, 'setValue');
 
     scenario.run({
       source: on, value: true, variables: freshVars(),
@@ -138,7 +143,7 @@ describe('§9 Невалидные настройки', () => {
     time.set('2026-06-21T09:31:00Z');
     const sw = makeSwitch(hub, 10, false);
     const on = sw.char(HS.Switch, HC.On);
-    const writes = spyOn(on, 'setValue');
+    const writes = spyCalls(on, 'setValue');
 
     scenario.run({
       source: on, value: false, variables: freshVars(),
@@ -211,7 +216,7 @@ describe('§7 Запись состояния — имя сервиса', () => 
     time.set('2026-06-21T09:31:00Z');
     const sw = makeSwitch(hub, 10, false);
     const on = sw.char(HS.Switch, HC.On);
-    const names = spyOn(sw.getService(HS.Switch), 'setName');
+    const names = spyCalls(sw.getService(HS.Switch), 'setName');
 
     scenario.run({
       source: on, value: false, variables: freshVars(),

@@ -32,6 +32,7 @@
     "notifyOnDryTimeout": false,
     "notifyChannels": "",
     "notifyClients": "",
+    "notifySilent": false,
     "debug": false
   },
   "variables": {},

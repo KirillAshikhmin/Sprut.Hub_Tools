@@ -47,6 +47,9 @@ const RUN_BY_RESTART = "restart";
 const SUB_GEN_KEY_PREFIX = "EFA_subGen_";
 const TIMERS_KEY_PREFIX = "EFA_timers_";
 
+/** Канал telegram-семейства узнаётся по префиксу имени («Telegram_1», «Telegram_2»), а не по полному совпадению. */
+const TELEGRAM_CHANNEL_PREFIX = "telegram";
+
 // Значения по умолчанию заданы один раз: их берут и опции в UI, и подстановка
 // при пустом значении в options (иначе таймеры и пороги превращались бы в NaN).
 const DEFAULT_TARGET_HUMIDITY = 60;
@@ -1144,12 +1147,22 @@ function sendDryTimeoutNotification(options, logSource, humidity, target) {
             logError("Заданы клиенты уведомлений, но не указан канал", logSource);
             return;
         }
-        const message = "💨 Вытяжка отработала предельное время " +
-            numberOption(options, "maxRunMinutes", DEFAULT_MAX_RUN_MINUTES) + " мин, но влажность " +
-            humidity + " % так и не опустилась до " + target + " %" +
-            (resolveDeviceName(logSource) ? " (" + resolveDeviceName(logSource) + ")" : "");
+        // Факты сообщения собираются один раз: ветки формата только оформляют их,
+        // иначе новое поле попадёт в одну ветку и потеряется в другой.
+        const report = {
+            humidity: humidity,
+            workingTarget: target,
+            minutes: numberOption(options, "maxRunMinutes", DEFAULT_MAX_RUN_MINUTES),
+            place: resolveDeviceParts(logSource)
+        };
+        const message = hasTelegramChannel(options.notifyChannels)
+            ? formatDryTimeoutForTelegram(report)
+            : formatDryTimeoutPlain(report);
 
         let notify = Notify.text(message).debugText(DEBUG_TITLE);
+        if (options.notifySilent === true) {
+            notify = notify.silent(true);
+        }
         for (let i = 0; i < channels.length; i++) {
             notify = notify.to(channels[i], clients);
         }
@@ -1158,6 +1171,43 @@ function sendDryTimeoutNotification(options, logSource, humidity, target) {
     } catch (e) {
         logError("Ошибка отправки уведомления: " + e.message, logSource);
     }
+}
+
+// Остальные каналы показали бы разметку как есть, поэтому им — одна плоская строка.
+// Место в ней записано той же формой, что и в логе.
+function formatDryTimeoutPlain(report) {
+    const device = report.place.resolved ? buildDeviceName(report.place.room, report.place.accessory,
+        report.place.service, report.place.uuid) : "";
+    return "💨 Вытяжка отработала предельное время " + report.minutes + " мин, но влажность " +
+        report.humidity + " % так и не опустилась до рабочего порога " + report.workingTarget + " %" +
+        (device ? " (" + device + ")" : "");
+}
+
+// Telegram понимает разметку — те же факты раскладываются на строки с жирным заголовком.
+function formatDryTimeoutForTelegram(report) {
+    let text = "💨 *Комната не высохла*\n";
+    text += "\n";
+    text += "Влажность: " + report.humidity + " %\n";
+    text += "Рабочий порог: " + report.workingTarget + " %\n";
+    text += "Вытяжка отработала: " + report.minutes + " мин";
+    if (report.place.resolved) {
+        text += "\n\nУстройство: " + buildDeviceLabel(report.place.accessory, report.place.service) +
+            " (ID: " + report.place.uuid + ")";
+        text += "\nКомната: " + report.place.room;
+    }
+    return text;
+}
+
+// Канал задаётся идентификатором вида "Telegram_1", поэтому значим префикс:
+// сравнение с полным именем канала не сработало бы уже на втором telegram-канале.
+function hasTelegramChannel(channels) {
+    const list = toIdList(channels);
+    for (let i = 0; i < list.length; i++) {
+        if (list[i].toLowerCase().startsWith(TELEGRAM_CHANNEL_PREFIX)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function toIdList(value) {
@@ -1196,17 +1246,31 @@ function getLogText(text, source) {
     return device ? (text + " | " + DEBUG_TITLE + device) : (text + " | " + DEBUG_TITLE);
 }
 
-// source может быть характеристикой (есть getService) или сервисом (берём напрямую).
-function resolveDeviceName(source) {
+// Единственное место, где source (характеристика с getService или сам сервис)
+// разбирается на части. Лог и уведомление собирают имя из результата: правило
+// склейки в двух копиях разъехалось бы при первой правке формата.
+function resolveDeviceParts(source) {
+    const place = {resolved: false, room: "", accessory: "", service: "", uuid: ""};
     if (!source) {
-        return "";
+        return place;
     }
     try {
         const service = typeof source.getService === "function" ? source.getService() : source;
-        return getDeviceName(service);
+        const accessory = service.getAccessory();
+        place.room = accessory.getRoom().getName();
+        place.accessory = accessory.getName();
+        place.service = service.getName();
+        place.uuid = service.getUUID();
+        place.resolved = true;
     } catch (e) {
-        return "";
+        // Имя устройства — украшение лога и сообщения: из-за него ничего не теряем.
     }
+    return place;
+}
+
+function resolveDeviceName(source) {
+    const place = resolveDeviceParts(source);
+    return place.resolved ? buildDeviceName(place.room, place.accessory, place.service, place.uuid) : "";
 }
 
 // --- Доступ к устройствам и опциям ------------------------------------------
@@ -1303,19 +1367,15 @@ function isSelfChanged(context) {
         elements[2] === elements[0];
 }
 
-// accessory передают явно, когда он уже на руках: экономит вызов в горячем цикле.
-function getDeviceName(service, accessory) {
-    if (!service) {
-        return "";
-    }
-    const acc = accessory || service.getAccessory();
-    return buildDeviceName(acc.getRoom().getName(), acc.getName(), service.getName(), service.getUUID());
+// "Имя Сервис"; совпадающее имя сервиса не дублируется. Одно правило склейки
+// на лог и на уведомление.
+function buildDeviceLabel(accName, serviceName) {
+    return accName === serviceName ? accName : accName + " " + serviceName;
 }
 
-// "Комната -> Имя Сервис (uuid)"; совпадающее имя сервиса не дублируется.
+// "Комната -> Имя Сервис (uuid)".
 function buildDeviceName(roomName, accName, serviceName, uuid) {
-    const label = accName === serviceName ? accName : accName + " " + serviceName;
-    return roomName + " -> " + label + " (" + uuid + ")";
+    return roomName + " -> " + buildDeviceLabel(accName, serviceName) + " (" + uuid + ")";
 }
 
 // Вынесен наверх, чтобы не создавать функцию в цикле (память).
@@ -1759,8 +1819,8 @@ function createOptions() {
     options.notifyChannels = {
         name: {ru: "Каналы уведомлений", en: "Notification channels"},
         desc: {
-            ru: "Идентификаторы каналов через запятую, например «Telegram_1, Web_1». Если пусто, уведомление уходит каналом по умолчанию.",
-            en: "Channel identifiers separated by commas, e.g. \"Telegram_1, Web_1\". If empty, the default channel is used."
+            ru: "Идентификаторы каналов через запятую, например «Telegram_1, Web_1». Если пусто, уведомление уходит по всем каналам, но распознать среди них telegram нельзя — текст придёт без разметки, поэтому для оформленного сообщения telegram-канал нужно указать явно.",
+            en: "Channel identifiers separated by commas, e.g. \"Telegram_1, Web_1\". If empty, the notification goes to every channel, but telegram cannot be detected among them — the text arrives unformatted, so name the telegram channel explicitly to get a formatted message."
         },
         type: "String",
         value: ""
@@ -1774,6 +1834,16 @@ function createOptions() {
         },
         type: "String",
         value: ""
+    };
+
+    options.notifySilent = {
+        name: {ru: "Тихое уведомление", en: "Silent notification"},
+        desc: {
+            ru: "Отправлять уведомление без звука.",
+            en: "Send the notification without sound."
+        },
+        type: "Boolean",
+        value: false
     };
 
     options.groupOther = optionGroupHeader("  ПРОЧЕЕ", "  OTHER");

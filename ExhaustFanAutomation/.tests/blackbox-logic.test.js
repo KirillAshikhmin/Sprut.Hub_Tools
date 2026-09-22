@@ -45,6 +45,7 @@ function baseOptions(overrides) {
     notifyOnDryTimeout: false,
     notifyChannels: '',
     notifyClients: '',
+    notifySilent: false,
     debug: false,
   };
   if (overrides) {
@@ -245,11 +246,14 @@ describe('§4 Опции — состав и значения по умолча�
     expect(options.maxRunMinutes.value).toBe(180);
   });
 
-  it('уведомления и отладка: notifyOnDryTimeout false, notifyChannels "", notifyClients "", debug false', ({ scenario }) => {
+  it('уведомления и отладка: notifyOnDryTimeout false, notifyChannels "", notifyClients "", notifySilent false, debug false', ({ scenario }) => {
     const options = scenario.info().options;
     expect(options.notifyOnDryTimeout.value).toBe(false);
     expect(options.notifyChannels.value).toBe('');
     expect(options.notifyClients.value).toBe('');
+    expect(options.notifySilent).toBeTruthy();          // опция объявлена
+    expect(options.notifySilent.type).toBe('Boolean');
+    expect(options.notifySilent.value).toBe(false);
     expect(options.debug.value).toBe(false);
   });
 
@@ -1399,6 +1403,99 @@ describe('§10 Уведомление о недосушке (G03)', () => {
     motionChar(motion).setValue(true);
     time.advance('180s');
     expect(logs.byLevel('error').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ============================================================================
+
+// Один и тот же повод для уведомления о недосушке (§10): вытяжка включается по движению,
+// гаснет по предельному таймеру через 45 минут, влажность 87 % при рабочем пороге 62 %.
+// Значения выбраны различимыми, чтобы искать их в тексте сообщения по отдельности.
+function fireDryTimeoutNotification(hub, scenario, time, extraOptions) {
+  const fan = addFan(hub);
+  const motion = addMotion(hub, 2, false);
+  const hum = addHumidity(hub, 3, 87);
+  const overrides = {
+    motion1: uuidOf(motion, HS.MotionSensor),
+    humiditySensor: uuidOf(hum, HS.HumiditySensor),
+    targetHumidity: 62,
+    notifyOnDryTimeout: true,
+    onDelaySeconds: 0,
+    maxRunMinutes: 45,
+  };
+  if (extraOptions) {
+    for (const key in extraOptions) overrides[key] = extraOptions[key];
+  }
+  const options = baseOptions(overrides);
+  const vars = {};
+  boot(scenario, fan, vars, options);
+
+  motionChar(motion).setValue(true);
+  expect(isOn(fan)).toBe(true);
+  time.advance('45m');
+  expect(isOn(fan)).toBe(false);          // сработал предел — это и есть повод уведомить
+  return fan;
+}
+
+// Признак жирного заголовка: разметка Markdown (*…* / __…__) либо HTML (<b>/<strong>).
+const BOLD_MARKUP = /\*[^*\n]+\*|__[^_\n]+__|<b>|<strong>/;
+
+describe('§10 Уведомление — тихий режим (notifySilent)', () => {
+  it('notifySilent = true — отправленная запись помечена тихой', ({ hub, scenario, time, notify }) => {
+    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1', notifySilent: true });
+
+    expect(notify.sent.length).toBe(1);
+    expect(notify.sent[0].silent).toBe(true);
+  });
+
+  it('notifySilent = false — на том же сценарии запись тихой не помечена', ({ hub, scenario, time, notify }) => {
+    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1', notifySilent: false });
+
+    expect(notify.sent.length).toBe(1);
+    expect(notify.sent[0].silent).toBe(false);
+  });
+});
+
+// ============================================================================
+
+describe('§10 Уведомление — оформление текста по каналу', () => {
+  it('telegram-канал выбран — заголовок размечен, факты разложены по строкам', ({ hub, scenario, time, notify }) => {
+    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1' });
+
+    expect(notify.sent.length).toBe(1);
+    const text = notify.sent[0].text;
+    expect(BOLD_MARKUP.test(text)).toBe(true);                 // жирный заголовок
+    expect(text).toContain('\n');                              // раскладка по строкам
+    const lines = text.split('\n').filter((line) => line.trim() !== '');
+    expect(lines.length).toBeGreaterThanOrEqual(4);            // заголовок + факты
+    expect(text).toContain('87');                              // влажность
+    expect(text).toContain('62');                              // рабочий порог
+    expect(text).toContain('45');                              // сколько отработала, мин
+    expect(text).toContain('Вытяжка');                         // устройство
+    expect(text).toContain('Санузел');                         // комната
+  });
+
+  it('telegram-канал строчными буквами и не первым в списке — текст всё равно размеченный', ({ hub, scenario, time, notify }) => {
+    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Web_1, telegram_2' });
+
+    expect(notify.sent.length).toBe(1);                        // один повод — одно уведомление
+    const text = notify.sent[0].text;
+    expect(BOLD_MARKUP.test(text)).toBe(true);
+    expect(text).toContain('\n');
+  });
+
+  it('telegram-канала нет — текст одной плоской строкой, без разметки', ({ hub, scenario, time, notify }) => {
+    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Web_1' });
+
+    expect(notify.sent.length).toBe(1);
+    const text = notify.sent[0].text;
+    expect(text).not.toContain('\n');                          // одна строка
+    expect(BOLD_MARKUP.test(text)).toBe(false);                // без жирного заголовка
+    expect(text).toContain('87');                              // тот же набор фактов, что и в telegram-ветке
+    expect(text).toContain('62');
+    expect(text).toContain('45');
+    expect(text).toContain('Вытяжка');
+    expect(text).toContain('Санузел');
   });
 });
 

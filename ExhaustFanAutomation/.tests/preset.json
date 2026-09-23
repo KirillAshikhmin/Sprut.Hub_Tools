@@ -30,9 +30,6 @@
     "cooldownMinutes": 0,
     "maxRunMinutes": 180,
     "notifyOnDryTimeout": false,
-    "notifyChannels": "",
-    "notifyClients": "",
-    "notifySilent": false,
     "debug": false
   },
   "variables": {},

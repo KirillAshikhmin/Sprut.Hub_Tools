@@ -43,9 +43,6 @@ function baseOptions(overrides) {
     cooldownMinutes: 0,
     maxRunMinutes: 180,
     notifyOnDryTimeout: false,
-    notifyChannels: '',
-    notifyClients: '',
-    notifySilent: false,
     debug: false,
   };
   if (overrides) {
@@ -246,15 +243,19 @@ describe('§4 Опции — состав и значения по умолча�
     expect(options.maxRunMinutes.value).toBe(180);
   });
 
-  it('уведомления и отладка: notifyOnDryTimeout false, notifyChannels "", notifyClients "", notifySilent false, debug false', ({ scenario }) => {
+  it('уведомления и отладка: notifyOnDryTimeout false, debug false', ({ scenario }) => {
     const options = scenario.info().options;
+    expect(options.notifyOnDryTimeout).toBeTruthy();    // опция объявлена
+    expect(options.notifyOnDryTimeout.type).toBe('Boolean');
     expect(options.notifyOnDryTimeout.value).toBe(false);
-    expect(options.notifyChannels.value).toBe('');
-    expect(options.notifyClients.value).toBe('');
-    expect(options.notifySilent).toBeTruthy();          // опция объявлена
-    expect(options.notifySilent.type).toBe('Boolean');
-    expect(options.notifySilent.value).toBe(false);
     expect(options.debug.value).toBe(false);
+  });
+
+  it('опций доставки уведомления в составе нет: notifyChannels, notifyClients, notifySilent', ({ scenario }) => {
+    const options = scenario.info().options;
+    expect(options.notifyChannels).toBeUndefined();
+    expect(options.notifyClients).toBeUndefined();
+    expect(options.notifySilent).toBeUndefined();
   });
 
   it('диапазоны целочисленных опций соответствуют §4', ({ scenario }) => {
@@ -1327,91 +1328,10 @@ describe('§10 Предельный таймер и блокировка пос�
   });
 });
 
-describe('§10 Уведомление о недосушке (G03)', () => {
-  it('предел истёк, влажность выше порога, уведомление включено — сообщение отправлено', ({ hub, scenario, time, notify }) => {
-    const fan = addFan(hub);
-    const motion = addMotion(hub, 2, false);
-    const hum = addHumidity(hub, 3, 85);
-    const options = baseOptions({
-      motion1: uuidOf(motion, HS.MotionSensor),
-      humiditySensor: uuidOf(hum, HS.HumiditySensor),
-      targetHumidity: 60,
-      notifyOnDryTimeout: true, notifyChannels: 'telegram',
-      onDelaySeconds: 0, maxRunMinutes: 3,
-    });
-    const vars = {};
-    boot(scenario, fan, vars, options);
-
-    motionChar(motion).setValue(true);
-    time.advance('180s');
-    expect(isOn(fan)).toBe(false);
-    expect(notify.sent.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('влажность в норме на момент предела — уведомления нет', ({ hub, scenario, time, notify }) => {
-    const fan = addFan(hub);
-    const motion = addMotion(hub, 2, false);
-    const hum = addHumidity(hub, 3, 45);
-    const options = baseOptions({
-      motion1: uuidOf(motion, HS.MotionSensor),
-      humiditySensor: uuidOf(hum, HS.HumiditySensor),
-      targetHumidity: 60,
-      notifyOnDryTimeout: true, notifyChannels: 'telegram',
-      onDelaySeconds: 0, maxRunMinutes: 3,
-    });
-    const vars = {};
-    boot(scenario, fan, vars, options);
-
-    motionChar(motion).setValue(true);
-    time.advance('180s');
-    expect(notify.sent.length).toBe(0);
-  });
-
-  it('notifyOnDryTimeout = false — уведомления нет даже при высокой влажности', ({ hub, scenario, time, notify }) => {
-    const fan = addFan(hub);
-    const motion = addMotion(hub, 2, false);
-    const hum = addHumidity(hub, 3, 85);
-    const options = baseOptions({
-      motion1: uuidOf(motion, HS.MotionSensor),
-      humiditySensor: uuidOf(hum, HS.HumiditySensor),
-      targetHumidity: 60,
-      notifyOnDryTimeout: false, notifyChannels: 'telegram',
-      onDelaySeconds: 0, maxRunMinutes: 3,
-    });
-    const vars = {};
-    boot(scenario, fan, vars, options);
-
-    motionChar(motion).setValue(true);
-    time.advance('180s');
-    expect(notify.sent.length).toBe(0);
-  });
-
-  it('клиенты указаны без канала — ошибка в лог', ({ hub, scenario, time, logs }) => {
-    const fan = addFan(hub);
-    const motion = addMotion(hub, 2, false);
-    const hum = addHumidity(hub, 3, 85);
-    const options = baseOptions({
-      motion1: uuidOf(motion, HS.MotionSensor),
-      humiditySensor: uuidOf(hum, HS.HumiditySensor),
-      targetHumidity: 60,
-      notifyOnDryTimeout: true, notifyChannels: '', notifyClients: 'ivan',
-      onDelaySeconds: 0, maxRunMinutes: 3,
-    });
-    const vars = {};
-    boot(scenario, fan, vars, options);
-
-    motionChar(motion).setValue(true);
-    time.advance('180s');
-    expect(logs.byLevel('error').length).toBeGreaterThanOrEqual(1);
-  });
-});
-
-// ============================================================================
-
 // Один и тот же повод для уведомления о недосушке (§10): вытяжка включается по движению,
 // гаснет по предельному таймеру через 45 минут, влажность 87 % при рабочем пороге 62 %.
-// Значения выбраны различимыми, чтобы искать их в тексте сообщения по отдельности.
-function fireDryTimeoutNotification(hub, scenario, time, extraOptions) {
+// Значения выбраны различимыми, чтобы искать их в тексте записи по отдельности.
+function fireDryTimeout(hub, scenario, time, extraOptions) {
   const fan = addFan(hub);
   const motion = addMotion(hub, 2, false);
   const hum = addHumidity(hub, 3, 87);
@@ -1437,65 +1357,75 @@ function fireDryTimeoutNotification(hub, scenario, time, extraOptions) {
   return fan;
 }
 
-// Признак жирного заголовка: разметка Markdown (*…* / __…__) либо HTML (<b>/<strong>).
-const BOLD_MARKUP = /\*[^*\n]+\*|__[^_\n]+__|<b>|<strong>/;
+// Доставка уведомления — `log.message(...)`, в стенде это отдельный уровень `message`.
+// Уровень `message` сценарий использует только для этого уведомления, отладка идёт
+// уровнями `info` и `error` (§19), поэтому отбор — по уровню. Привязываться к словам
+// нельзя: формулировки вне контракта (§17.6).
+function dryTimeoutRecords(logs) {
+  return logs.byLevel('message');
+}
 
-describe('§10 Уведомление — тихий режим (notifySilent)', () => {
-  it('notifySilent = true — отправленная запись помечена тихой', ({ hub, scenario, time, notify }) => {
-    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1', notifySilent: true });
+describe('§10 Уведомление о недосушке (G03)', () => {
+  it('предел истёк, влажность выше порога, уведомление включено — ровно одна запись уровня message', ({ hub, scenario, time, logs }) => {
+    fireDryTimeout(hub, scenario, time);
 
-    expect(notify.sent.length).toBe(1);
-    expect(notify.sent[0].silent).toBe(true);
+    expect(dryTimeoutRecords(logs).length).toBe(1);     // один повод — одно уведомление
   });
 
-  it('notifySilent = false — на том же сценарии запись тихой не помечена', ({ hub, scenario, time, notify }) => {
-    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1', notifySilent: false });
+  it('запись несёт факты: влажность, рабочий порог, сколько отработала, устройство, комната', ({ hub, scenario, time, logs }) => {
+    const fan = fireDryTimeout(hub, scenario, time);
 
-    expect(notify.sent.length).toBe(1);
-    expect(notify.sent[0].silent).toBe(false);
-  });
-});
-
-// ============================================================================
-
-describe('§10 Уведомление — оформление текста по каналу', () => {
-  it('telegram-канал выбран — заголовок размечен, факты разложены по строкам', ({ hub, scenario, time, notify }) => {
-    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Telegram_1' });
-
-    expect(notify.sent.length).toBe(1);
-    const text = notify.sent[0].text;
-    expect(BOLD_MARKUP.test(text)).toBe(true);                 // жирный заголовок
-    expect(text).toContain('\n');                              // раскладка по строкам
-    const lines = text.split('\n').filter((line) => line.trim() !== '');
-    expect(lines.length).toBeGreaterThanOrEqual(4);            // заголовок + факты
-    expect(text).toContain('87');                              // влажность
-    expect(text).toContain('62');                              // рабочий порог
-    expect(text).toContain('45');                              // сколько отработала, мин
-    expect(text).toContain('Вытяжка');                         // устройство
-    expect(text).toContain('Санузел');                         // комната
+    const records = dryTimeoutRecords(logs);
+    expect(records.length).toBe(1);
+    const text = records[0].message;
+    expect(text).toContain('87');                       // влажность
+    expect(text).toContain('62');                       // рабочий порог
+    expect(text).toContain('45');                       // сколько отработала, мин
+    expect(text).toContain(uuidOf(fan.acc, fan.type));  // устройство — с идентификатором
+    expect(text).toContain('Санузел');                  // комната
   });
 
-  it('telegram-канал строчными буквами и не первым в списке — текст всё равно размеченный', ({ hub, scenario, time, notify }) => {
-    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Web_1, telegram_2' });
+  it('notifyOnDryTimeout = false — на том же поводе записи о недосушке нет', ({ hub, scenario, time, logs }) => {
+    fireDryTimeout(hub, scenario, time, { notifyOnDryTimeout: false });
 
-    expect(notify.sent.length).toBe(1);                        // один повод — одно уведомление
-    const text = notify.sent[0].text;
-    expect(BOLD_MARKUP.test(text)).toBe(true);
-    expect(text).toContain('\n');
+    expect(dryTimeoutRecords(logs).length).toBe(0);
   });
 
-  it('telegram-канала нет — текст одной плоской строкой, без разметки', ({ hub, scenario, time, notify }) => {
-    fireDryTimeoutNotification(hub, scenario, time, { notifyChannels: 'Web_1' });
+  it('влажность в норме на момент предела — записи о недосушке нет', ({ hub, scenario, time, logs }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const hum = addHumidity(hub, 3, 45);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(hum, HS.HumiditySensor),
+      targetHumidity: 60,
+      notifyOnDryTimeout: true,
+      onDelaySeconds: 0, maxRunMinutes: 3,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
 
-    expect(notify.sent.length).toBe(1);
-    const text = notify.sent[0].text;
-    expect(text).not.toContain('\n');                          // одна строка
-    expect(BOLD_MARKUP.test(text)).toBe(false);                // без жирного заголовка
-    expect(text).toContain('87');                              // тот же набор фактов, что и в telegram-ветке
-    expect(text).toContain('62');
-    expect(text).toContain('45');
-    expect(text).toContain('Вытяжка');
-    expect(text).toContain('Санузел');
+    motionChar(motion).setValue(true);
+    time.advance('180s');
+    expect(isOn(fan)).toBe(false);
+    expect(dryTimeoutRecords(logs).length).toBe(0);
+  });
+
+  it('датчик влажности не выбран — записи о недосушке нет', ({ hub, scenario, time, logs }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = baseOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      notifyOnDryTimeout: true,
+      onDelaySeconds: 0, maxRunMinutes: 3,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('180s');
+    expect(isOn(fan)).toBe(false);
+    expect(dryTimeoutRecords(logs).length).toBe(0);
   });
 });
 

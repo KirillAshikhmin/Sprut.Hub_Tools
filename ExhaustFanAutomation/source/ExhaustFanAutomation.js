@@ -47,9 +47,6 @@ const RUN_BY_RESTART = "restart";
 const SUB_GEN_KEY_PREFIX = "EFA_subGen_";
 const TIMERS_KEY_PREFIX = "EFA_timers_";
 
-/** Канал telegram-семейства узнаётся по префиксу имени («Telegram_1», «Telegram_2»), а не по полному совпадению. */
-const TELEGRAM_CHANNEL_PREFIX = "telegram";
-
 // Значения по умолчанию заданы один раз: их берут и опции в UI, и подстановка
 // при пустом значении в options (иначе таймеры и пороги превращались бы в NaN).
 const DEFAULT_TARGET_HUMIDITY = 60;
@@ -1119,7 +1116,7 @@ function applyFanSpeed(svc, options, logSource) {
     logInfo("Скорость вытяжки: " + speed + " % (" + (high ? "форсаж, влажность высокая" : "обычная") + ")", logSource, options.debug);
 }
 
-// --- Уведомление о недосушенной комнате (G03) -------------------------------
+// --- Уведомление о недосушенной комнате: запись в журнал хаба (G03) ----------
 
 function notifyIfStillHumid(options, logSource) {
     if (options.notifyOnDryTimeout !== true || !options.humiditySensor) {
@@ -1133,96 +1130,26 @@ function notifyIfStillHumid(options, logSource) {
     if (humidity <= target) {
         return;
     }
-    sendDryTimeoutNotification(options, logSource, humidity, target);
+    logDryTimeoutMessage(options, logSource, humidity, target);
 }
 
-// Каналы и клиенты — списки через запятую. Клиенты передаются в Notify.to
-// массивом одним аргументом: Nashorn разворачивает JS-массив в varargs,
-// а .apply на Java-методе не работает.
-function sendDryTimeoutNotification(options, logSource, humidity, target) {
+// Никакой доставки нет: сообщение пишется в журнал хаба через log.message —
+// отдельным уровнем, не зависящим от «Режима отладки». Формат один, потому что
+// каналов, клиентов и тихого режима у журнала не бывает.
+// Порог в тексте — рабочий (computeEffectiveTarget), а не значение опции
+// «Целевая влажность»: при контрольном датчике они расходятся.
+// Место записано той же формой, что и в логе: одно правило склейки на оба.
+function logDryTimeoutMessage(options, logSource, humidity, target) {
     try {
-        const channels = toIdList(options.notifyChannels);
-        const clients = toIdList(options.notifyClients);
-        if (clients.length > 0 && channels.length === 0) {
-            logError("Заданы клиенты уведомлений, но не указан канал", logSource);
-            return;
-        }
-        // Факты сообщения собираются один раз: ветки формата только оформляют их,
-        // иначе новое поле попадёт в одну ветку и потеряется в другой.
-        const report = {
-            humidity: humidity,
-            workingTarget: target,
-            minutes: numberOption(options, "maxRunMinutes", DEFAULT_MAX_RUN_MINUTES),
-            place: resolveDeviceParts(logSource)
-        };
-        const message = hasTelegramChannel(options.notifyChannels)
-            ? formatDryTimeoutForTelegram(report)
-            : formatDryTimeoutPlain(report);
-
-        let notify = Notify.text(message).debugText(DEBUG_TITLE);
-        if (options.notifySilent === true) {
-            notify = notify.silent(true);
-        }
-        for (let i = 0; i < channels.length; i++) {
-            notify = notify.to(channels[i], clients);
-        }
-        notify.send();
-        logInfo("Уведомление о недосушенной комнате отправлено", logSource, options.debug);
+        const minutes = numberOption(options, "maxRunMinutes", DEFAULT_MAX_RUN_MINUTES);
+        const device = resolveDeviceName(logSource);
+        log.message("💨 Вытяжка отработала предельное время " + minutes + " мин, но влажность " +
+            humidity + " % так и не опустилась до рабочего порога " + target + " %" +
+            (device ? " (" + device + ")" : ""));
+        logInfo("Запись о недосушенной комнате добавлена в журнал", logSource, options.debug);
     } catch (e) {
-        logError("Ошибка отправки уведомления: " + e.message, logSource);
+        logError("Ошибка записи о недосушенной комнате в журнал: " + e.message, logSource);
     }
-}
-
-// Остальные каналы показали бы разметку как есть, поэтому им — одна плоская строка.
-// Место в ней записано той же формой, что и в логе.
-function formatDryTimeoutPlain(report) {
-    const device = report.place.resolved ? buildDeviceName(report.place.room, report.place.accessory,
-        report.place.service, report.place.uuid) : "";
-    return "💨 Вытяжка отработала предельное время " + report.minutes + " мин, но влажность " +
-        report.humidity + " % так и не опустилась до рабочего порога " + report.workingTarget + " %" +
-        (device ? " (" + device + ")" : "");
-}
-
-// Telegram понимает разметку — те же факты раскладываются на строки с жирным заголовком.
-function formatDryTimeoutForTelegram(report) {
-    let text = "💨 *Комната не высохла*\n";
-    text += "\n";
-    text += "Влажность: " + report.humidity + " %\n";
-    text += "Рабочий порог: " + report.workingTarget + " %\n";
-    text += "Вытяжка отработала: " + report.minutes + " мин";
-    if (report.place.resolved) {
-        text += "\n\nУстройство: " + buildDeviceLabel(report.place.accessory, report.place.service) +
-            " (ID: " + report.place.uuid + ")";
-        text += "\nКомната: " + report.place.room;
-    }
-    return text;
-}
-
-// Канал задаётся идентификатором вида "Telegram_1", поэтому значим префикс:
-// сравнение с полным именем канала не сработало бы уже на втором telegram-канале.
-function hasTelegramChannel(channels) {
-    const list = toIdList(channels);
-    for (let i = 0; i < list.length; i++) {
-        if (list[i].toLowerCase().startsWith(TELEGRAM_CHANNEL_PREFIX)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function toIdList(value) {
-    if (value === undefined || value === null) {
-        return [];
-    }
-    const items = Array.isArray(value) ? value : String(value).split(",");
-    const out = [];
-    for (let i = 0; i < items.length; i++) {
-        const item = String(items[i]).trim();
-        if (item !== "") {
-            out.push(item);
-        }
-    }
-    return out;
 }
 
 // --- Лог --------------------------------------------------------------------
@@ -1247,30 +1174,20 @@ function getLogText(text, source) {
 }
 
 // Единственное место, где source (характеристика с getService или сам сервис)
-// разбирается на части. Лог и уведомление собирают имя из результата: правило
-// склейки в двух копиях разъехалось бы при первой правке формата.
-function resolveDeviceParts(source) {
-    const place = {resolved: false, room: "", accessory: "", service: "", uuid: ""};
+// разбирается на имя устройства. Имя — украшение лога и записи о недосушке,
+// поэтому неудачный разбор гасится в пустую строку: из-за него ничего не теряем.
+function resolveDeviceName(source) {
     if (!source) {
-        return place;
+        return "";
     }
     try {
         const service = typeof source.getService === "function" ? source.getService() : source;
         const accessory = service.getAccessory();
-        place.room = accessory.getRoom().getName();
-        place.accessory = accessory.getName();
-        place.service = service.getName();
-        place.uuid = service.getUUID();
-        place.resolved = true;
+        return buildDeviceName(accessory.getRoom().getName(), accessory.getName(),
+            service.getName(), service.getUUID());
     } catch (e) {
-        // Имя устройства — украшение лога и сообщения: из-за него ничего не теряем.
+        return "";
     }
-    return place;
-}
-
-function resolveDeviceName(source) {
-    const place = resolveDeviceParts(source);
-    return place.resolved ? buildDeviceName(place.room, place.accessory, place.service, place.uuid) : "";
 }
 
 // --- Доступ к устройствам и опциям ------------------------------------------
@@ -1367,15 +1284,11 @@ function isSelfChanged(context) {
         elements[2] === elements[0];
 }
 
-// "Имя Сервис"; совпадающее имя сервиса не дублируется. Одно правило склейки
-// на лог и на уведомление.
-function buildDeviceLabel(accName, serviceName) {
-    return accName === serviceName ? accName : accName + " " + serviceName;
-}
-
-// "Комната -> Имя Сервис (uuid)".
+// "Комната -> Имя Сервис (uuid)"; совпадающее имя сервиса не дублируется.
+// Одно правило склейки на лог и на список устройств в опциях.
 function buildDeviceName(roomName, accName, serviceName, uuid) {
-    return roomName + " -> " + buildDeviceLabel(accName, serviceName) + " (" + uuid + ")";
+    const label = accName === serviceName ? accName : accName + " " + serviceName;
+    return roomName + " -> " + label + " (" + uuid + ")";
 }
 
 // Вынесен наверх, чтобы не создавать функцию в цикле (память).
@@ -1809,38 +1722,8 @@ function createOptions() {
     options.notifyOnDryTimeout = {
         name: {ru: "Уведомлять, если комната не высохла за предельное время", en: "Notify if the room is not dry within the maximum run time"},
         desc: {
-            ru: "Если включено, при срабатывании предельного времени работы и влажности выше рабочего порога отправляется уведомление в указанные каналы.",
-            en: "If enabled, a notification is sent to the selected channels when the maximum run time expires while humidity is still above the working threshold."
-        },
-        type: "Boolean",
-        value: false
-    };
-
-    options.notifyChannels = {
-        name: {ru: "Каналы уведомлений", en: "Notification channels"},
-        desc: {
-            ru: "Идентификаторы каналов через запятую, например «Telegram_1, Web_1». Если пусто, уведомление уходит по всем каналам, но распознать среди них telegram нельзя — текст придёт без разметки, поэтому для оформленного сообщения telegram-канал нужно указать явно.",
-            en: "Channel identifiers separated by commas, e.g. \"Telegram_1, Web_1\". If empty, the notification goes to every channel, but telegram cannot be detected among them — the text arrives unformatted, so name the telegram channel explicitly to get a formatted message."
-        },
-        type: "String",
-        value: ""
-    };
-
-    options.notifyClients = {
-        name: {ru: "Клиенты уведомлений", en: "Notification clients"},
-        desc: {
-            ru: "Идентификаторы клиентов через запятую; применяются к каждому каналу. Если клиенты указаны, а канал нет — в лог пишется ошибка и уведомление не отправляется.",
-            en: "Client identifiers separated by commas; applied to every channel. If clients are set but no channel is, an error is logged and nothing is sent."
-        },
-        type: "String",
-        value: ""
-    };
-
-    options.notifySilent = {
-        name: {ru: "Тихое уведомление", en: "Silent notification"},
-        desc: {
-            ru: "Отправлять уведомление без звука.",
-            en: "Send the notification without sound."
+            ru: "Если включено, при срабатывании предельного времени работы и влажности выше рабочего порога сообщение об этом пишется в журнал хаба.",
+            en: "If enabled, a message is written to the hub log when the maximum run time expires while humidity is still above the working threshold."
         },
         type: "Boolean",
         value: false

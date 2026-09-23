@@ -49,7 +49,7 @@
 
 ## Из таска 01 — сценарий
 
-- Файл: `SunInWindow/source/SunInWindow.js`. `info`: name «☀️ Свет в окне», version 1.0,
+- Файл: `SunInWindow/source/SunInWindow.js`. `info`: name «☀️ Солнце в окне», version 1.0,
   author @BOOMikru, `onStart: true`, `sourceServices: [HS.Switch, HS.Outlet, HS.Lightbulb]`,
   `sourceCharacteristics: [HC.On]` (после таска 04). `compute` не реализован — только `trigger`.
 - Опции (после `desc`/`html`): `latitude`, `longitude`, `windowDirection` (list 0/45/…/315,
@@ -64,7 +64,7 @@
   `applyState(source, options, sunIsInWindow)` · `isBlankOption(value) -> boolean` ·
   `scheduleRecalculation(source, variables, options, settings)`.
 - Поколения таймеров: `global["SIW_gen_" + UUID сервиса]`.
-- Префикс лога: `"☀️ Свет в окне. "`. Имена сервиса: «Солнце в окне» / «Солнца в окне нет».
+- Префикс лога: `"☀️ Солнце в окне. "`. Имена сервиса: «Солнце в окне» / «Солнца в окне нет».
 - Проверяемые параметры — `OPTION_LIMITS {LATITUDE, LONGITUDE, WINDOW_AZIMUTH, MIN_ALTITUDE,
   MAX_DEVIATION}`; интервал пересчёта не проверяется, а зажимается по `UPDATE_INTERVAL_MINUTES`.
 - Текст ошибки валидации: «Неверное значение параметра «Имя»: X. Допустимый диапазон a…b.

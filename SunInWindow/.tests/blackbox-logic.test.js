@@ -1,4 +1,4 @@
-// Black-box тесты логического сценария «☀️ Свет в окне» (SunInWindow) от поведенческой
+// Black-box тесты логического сценария «☀️ Солнце в окне» (SunInWindow) от поведенческой
 // спецификации `.tests/SPEC.md`. Исходник сценария, его README и чужие тесты НЕ читались:
 // все ожидания выведены из SPEC.md, а опорные значения астрономии посчитаны независимой
 // реализацией алгоритма NOAA Solar Calculator (см. §4.3/§4.4 SPEC.md).
@@ -1277,10 +1277,10 @@ function hasNear(numbers, expected) {
 }
 
 describe('§15 Логирование', () => {
-  it('§15 изменившийся пересчёт пишет строку с префиксом «☀️ Свет в окне.»', (ctx) => {
+  it('§15 изменившийся пересчёт пишет строку с префиксом «☀️ Солнце в окне.»', (ctx) => {
     const s = setup(ctx, MSK_JUN_NOON, { windowDirection: 180, maxAzimuthDeviation: 5 }, false);
     s.run();
-    expect(ctx.logs.containing('☀️ Свет в окне.').length).toBeGreaterThan(0);
+    expect(ctx.logs.containing('☀️ Солнце в окне.').length).toBeGreaterThan(0);
   });
 
   it('§15 строка состояния несёт высоту, азимут и отклонение — числа из §4.4', (ctx) => {
@@ -1290,7 +1290,7 @@ describe('§15 Логирование', () => {
       { windowDirection: 180, maxAzimuthDeviation: 90, minSunAltitude: 5 }, false);
     s.run();
     expect(s.char.getValue()).toBe(true);
-    const entries = ctx.logs.containing('☀️ Свет в окне.');
+    const entries = ctx.logs.containing('☀️ Солнце в окне.');
     expect(entries).toHaveLength(1);
     const numbers = parseNumbers(entries[0].message);
     expect(hasNear(numbers, 51.40)).toBe(true);    // высота

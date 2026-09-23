@@ -6,12 +6,12 @@ window.STATE =
   "depth": "normal",
   "polish": null,
   "tier": "T1",
-  "briefFile": "2026-09-21-brief.md",
+  "briefFile": "2026-09-23-brief.md (второй; первый — 2026-09-20-brief.md)",
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/asihminkirill/.agents/skills/autopilot",
   "startedAt": "2026-09-21T03:47:01+03:00",
-  "updatedAt": "2026-09-23T15:57:28+03:00",
-  "finishedAt": "2026-09-23T15:57:28+03:00",
+  "updatedAt": "2026-09-23T17:59:14+03:00",
+  "finishedAt": "2026-09-23T17:59:14+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -49,31 +49,31 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-09-21T04:01:30+03:00",
-      "note": "12 из 12 тасков готовы",
-      "finishedAt": "2026-09-23T15:57:28+03:00"
+      "note": "16 из 16 тасков готовы",
+      "finishedAt": "2026-09-23T17:59:14+03:00"
     },
     {
       "id": "review",
       "status": "done",
       "startedAt": "2026-09-21T04:15:04+03:00",
-      "note": "проверено 12 из 12",
-      "finishedAt": "2026-09-23T15:57:28+03:00"
+      "note": "проверено 16 из 16",
+      "finishedAt": "2026-09-23T17:59:14+03:00"
     },
     {
       "id": "final",
       "status": "done",
       "note": "слепая приёмка: 7 из 8, одно частично",
-      "startedAt": "2026-09-23T15:57:28+03:00",
-      "finishedAt": "2026-09-23T15:57:28+03:00"
+      "startedAt": "2026-09-23T17:59:14+03:00",
+      "finishedAt": "2026-09-23T17:59:14+03:00"
     }
   ],
   "requirements": {
-    "total": 19,
-    "done": 19,
-    "inTicket": 0,
+    "total": 45,
+    "done": 34,
+    "inTicket": 10,
     "inSpec": 0,
     "placeholder": 0,
-    "deferred": 0,
+    "deferred": 1,
     "dropped": 0
   },
   "tickets": [
@@ -388,11 +388,133 @@ window.STATE =
       "repairFindings": [
         "отбор записи шёл по слову, хотя спецификация формулировки не фиксирует — переведён на уровень message"
       ]
+    },
+    {
+      "id": "13",
+      "title": "Режим «Не включать при присутствии»",
+      "requirements": [
+        "G07",
+        "G08",
+        "G09",
+        "G10",
+        "G11",
+        "R19"
+      ],
+      "blockedBy": [],
+      "wave": 9,
+      "zone": [
+        "ExhaustFanAutomation/source/",
+        "ExhaustFanAutomation/README.md"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T16:03:41+03:00",
+      "retries": 0,
+      "repairs": 2,
+      "handoffs": 0,
+      "tests": {
+        "passed": 4049,
+        "failed": 0
+      },
+      "files": [
+        "ExhaustFanAutomation/source/ExhaustFanAutomation.js",
+        "ExhaustFanAutomation/README.md"
+      ],
+      "finishedAt": "2026-09-23T17:59:14+03:00",
+      "commit": "a057230"
+    },
+    {
+      "id": "14",
+      "title": "Тесты и пресет на режим присутствия",
+      "requirements": [
+        "R22i",
+        "G07",
+        "G08",
+        "G09",
+        "G10"
+      ],
+      "blockedBy": [],
+      "wave": 9,
+      "zone": [
+        "ExhaustFanAutomation/.tests/"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T16:03:41+03:00",
+      "retries": 0,
+      "repairs": 3,
+      "handoffs": 0,
+      "tests": {
+        "passed": 4049,
+        "failed": 0
+      },
+      "files": [
+        "ExhaustFanAutomation/.tests/blackbox-logic.test.js",
+        "ExhaustFanAutomation/.tests/SPEC.md",
+        "ExhaustFanAutomation/.tests/preset.json"
+      ],
+      "finishedAt": "2026-09-23T17:59:14+03:00",
+      "commit": "a057230"
+    },
+    {
+      "id": "15",
+      "title": "Периодическая вентиляция",
+      "requirements": [
+        "G12",
+        "G13",
+        "G14",
+        "G15",
+        "G16",
+        "R19"
+      ],
+      "blockedBy": [],
+      "wave": 10,
+      "zone": [
+        "ExhaustFanAutomation/source/",
+        "ExhaustFanAutomation/README.md"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T16:30:51+03:00",
+      "retries": 0,
+      "repairs": 2,
+      "handoffs": 0,
+      "tests": {
+        "passed": 4049,
+        "failed": 0
+      },
+      "finishedAt": "2026-09-23T17:59:14+03:00",
+      "commit": "a057230"
+    },
+    {
+      "id": "16",
+      "title": "Тесты и пресет на периодическую вентиляцию",
+      "requirements": [
+        "R22i",
+        "G12",
+        "G13",
+        "G14",
+        "G15",
+        "G16"
+      ],
+      "blockedBy": [],
+      "wave": 10,
+      "zone": [
+        "ExhaustFanAutomation/.tests/"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T16:30:51+03:00",
+      "retries": 0,
+      "repairs": 3,
+      "handoffs": 0,
+      "tests": {
+        "passed": 4049,
+        "failed": 0
+      },
+      "finishedAt": "2026-09-23T17:59:14+03:00",
+      "commit": "a057230"
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 3986,
+    "passed": 4049,
     "failed": 0
   },
   "debt": {
@@ -404,7 +526,9 @@ window.STATE =
     "A01 — опция «Возможность ручного управления», по образцу DayNight",
     "A02 — опция «Менять имя сервиса», по образцу DayNight",
     "A03 — опция «Инвертировать», по образцу DayNight",
-    "Уведомление о недосушке через log.message — запись в журнал хаба, ради G03"
+    "Уведомление о недосушке через log.message — запись в журнал хаба, ради G03",
+    "Режим «Не включать при присутствии» с проветриванием после ухода — по брифу 2026-09-23",
+    "Периодическая вентиляция по интервалу — по брифу 2026-09-23 (2)"
   ],
   "coverage": {
     "findings": 7,
@@ -424,10 +548,13 @@ window.STATE =
     "blackbox-logic.test.js:1037,898,199 — три утверждения слишком широки, чтобы упасть поодиночке",
     "blackbox-logic.test.js:1013,1027 — «ошибки не было» выражено через общее число строк лога, а не через уровень error",
     "blackbox-logic.test.js:653 и smoke.test.js:33 — два разных перехватчика записи, оба теряют аргументы кроме первого",
-    "SPEC.md §17.3 — «windowAzimuth строго между −1 и 0» остался в неспецифицированных зонах, хотя правило D02 его уже решило"
+    "SPEC.md §17.3 — «windowAzimuth строго между −1 и 0» остался в неспецифицированных зонах, хотя правило D02 его уже решило",
+    "код 13/15 · продувка после ухода могла зависнуть до предельного таймера при поднятом manualHold — следствие второй копии механизма; чинится схлопыванием",
+    "инструменты · ревьюер manifest+spec умер на API-ошибке после отчёта, handle сброшен — следующий круг нужен свежий",
+    "процесс · правка interfaces.md для таска 03 съела маркер-заполнитель, и три последующие вставки через str.replace молча не сработали при рапортующем об успехе print — два раздела потерялись и восстановлены; впредь проверять запись чтением файла"
   ],
   "reviewers": {
-    "manifestSpec": "a9ecd2e051dfaa9e7",
+    "manifestSpec": "ae17bb6ec852d5b1d",
     "craft": "ad3a0df2d1e78ccbf"
   },
   "blind": {

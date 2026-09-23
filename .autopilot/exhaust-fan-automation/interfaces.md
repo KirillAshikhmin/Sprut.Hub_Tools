@@ -106,3 +106,52 @@
   TurnOffAllLight), все однофайловые LOGIC, включая эталон, его не ставят.
 - `ExhaustFanAutomation/ExhaustFanAutomation.json` — генерируется `./publish`, руками не править.
 - Публикация: `./publish ExhaustFanAutomation` (сначала `--check`).
+
+### Из тасков 11–12 — доставка уведомления только через `log.message`
+
+- Решение пользователя, дословно: «только log.message надо оставить». `Notify` в сценарии
+  не используется; опции `notifyChannels`, `notifyClients`, `notifySilent` и ветка оформления
+  под Telegram сняты. Остался один выключатель `notifyOnDryTimeout`.
+- `log.message(format, ...args)` — `interface Log` в `ScenarioTemplate/spruthub.js`. Этот сценарий
+  использует его в репозитории первым. Симулятор пишет его уровнем `message` (`ConsoleMock`),
+  тесты отбирают запись через `logs.byLevel("message")`.
+- **Уровень `message` в этом сценарии означает только уведомление о недосушке**; отладка идёт
+  уровнями `info` и `error`. Поэтому отбор в тестах по уровню, а не по словам.
+- `logDryTimeoutMessage(options, src, humidity, target)` — шов уведомления (бывшая
+  `sendDryTimeoutNotification`). Снято как осиротевшее: `toIdList`, `hasTelegramChannel`,
+  обе функции формата, `TELEGRAM_CHANNEL_PREFIX`, `resolveDeviceParts`, `buildDeviceLabel`.
+- Ярлык порога в сообщении называет **рабочий** порог (`computeEffectiveTarget`), а не значение
+  опции `Целевая влажность`: при контрольном датчике они расходятся.
+
+### Из тасков 13–16 — режим присутствия и периодическая вентиляция
+
+**Один сеанс проветривания на два повода.** Продувка после ухода (§11) и периодическая
+вентиляция (§12) — один механизм с полем причины, а не две копии. Копий было две, и хвосты
+между ними успели разойтись — схлопнуто в таске 15. Не разводить заново.
+
+- Опции: `noRunWhilePresent` (Boolean, `false`), `airingMinutes` (Integer 0…1440, `5` — бывшая
+  `purgeMinutes`, обслуживает оба повода), `airingIntervalHours` (Integer 0…168, `0`),
+  заголовок `groupPeriodicAiring`.
+- `variables`: `airingRequestedReason`, `airingRunReason` (`"airingAfterVisit"` |
+  `"airingPeriodic"`), `airingTimerId`, `airingIntervalTimerId`.
+  **Снято:** `purgeRequested`, `purgeRun`, `purgeTimerId`.
+- Дескрипторы: `TIMER_AIRING` — один на оба повода (`TIMER_PURGE` снят), `TIMER_AIRING_INTERVAL`.
+- `chooseTurnOnReason(variables, options)` → `AIRING_AFTER_VISIT` | `ON_BY_PRESENCE` |
+  `ON_BY_HUMIDITY` | `AIRING_PERIODIC` | `""` — **единственное место с приоритетом поводов**.
+- `clearAiringRequest(variables)` гасит просьбу любого повода; `clearAiringRequestOf(variables, reason)`
+  снимает только просьбу названного повода и делегирует первому. Других мутаторов просьбы нет.
+  Присутствие снимает только просьбу за визит; периодическую не трогает — при человеке она
+  и так не включится (§12.2).
+- Прочее: `startAiringRun`, `armAiringRunTimer`, `isAiringRunActive`, `isAiringReason`,
+  `airingReasonText`, `requestAiringAfterVisit`, `armAiringIntervalTimer`, `onAiringIntervalReached`,
+  `isNoRunWhilePresent`, `airingRunMinutes`, `turnOffBecausePresent`, `manualHoldReason`.
+  Константы `HOUR_MS`, `DEFAULT_AIRING_MINUTES`, `DEFAULT_AIRING_INTERVAL_HOURS`.
+- Отсчёт интервала заводится в `endRun` (любое выключение) и в `handleScenarioStart` при
+  выключенной вытяжке; снимается в `beginRun` — любая работа обнуляет.
+- **Ненаблюдаемая зона, не чинить:** под поднятым ручным удержанием проветривание заканчивается
+  предельным таймером, и это §7, а не дефект. Удержание поднимается только включением вытяжки,
+  а во время проветривания она уже включена — внутри сеанса поднять его нечем. Подробности —
+  `spec.md` §12.10 (ревизия) и `.tests/SPEC.md` §17.7.
+
+<!-- заполняется по мере сдачи тасков -->
+

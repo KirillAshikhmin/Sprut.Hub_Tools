@@ -19,6 +19,7 @@ const OCCUPANCY_SENSOR_KINDS = [
 
 const SECOND_MS = 1000;
 const MINUTE_MS = 60000;
+const HOUR_MS = 3600000;
 
 // Таймеры сценария: поле в variables и текст в лог при снятии. Завести и снять
 // таймер можно только по дескриптору отсюда — имя поля никогда не пишется строкой
@@ -29,6 +30,8 @@ const TIMER_PRESENCE_RESET = {field: "presenceResetTimerId", clearedText: "Сб�
 const TIMER_OFF = {field: "offTimerId", clearedText: "Таймер выключения сброшен"};
 const TIMER_MAX_RUN = {field: "maxRunTimerId", clearedText: "Предельный таймер сброшен"};
 const TIMER_COOLDOWN = {field: "cooldownTimerId", clearedText: "Отсчёт паузы перед повторным включением сброшен"};
+const TIMER_AIRING = {field: "airingTimerId", clearedText: "Таймер проветривания сброшен"};
+const TIMER_AIRING_INTERVAL = {field: "airingIntervalTimerId", clearedText: "Отсчёт до периодической вентиляции сброшен"};
 const TIMER_AUTO_ON_LOCK = {field: "autoOnLockTimerId", clearedText: "Блокировка авто-включения: отсчёт снятия отменён"};
 
 /** Причины блокировки авто-включения (см. §7 и §8 спецификации). */
@@ -42,6 +45,14 @@ const RUN_BY_MANUAL = "manual";
 const RUN_BY_MANUAL_SWITCH = "manualSwitch";
 const RUN_BY_EXTERNAL = "external";
 const RUN_BY_RESTART = "restart";
+
+// Зачем сценарий включает вытяжку. Проветривание — ОДИН сеанс с двумя поводами
+// (§11 и §12): повод различает только тексты в логе, правила выхода у них общие,
+// поэтому он и хранится полем, а не вторым набором флагов и таймеров.
+const AIRING_AFTER_VISIT = "airingAfterVisit";
+const AIRING_PERIODIC = "airingPeriodic";
+const ON_BY_PRESENCE = "presence";
+const ON_BY_HUMIDITY = "humidity";
 
 /** Ключи общего хранилища global: счётчик поколений и задачи текущего поколения. */
 const SUB_GEN_KEY_PREFIX = "EFA_subGen_";
@@ -59,6 +70,8 @@ const DEFAULT_OFF_DELAY_SECONDS = 300;
 const DEFAULT_MIN_RUN_MINUTES = 0;
 const DEFAULT_COOLDOWN_MINUTES = 0;
 const DEFAULT_MAX_RUN_MINUTES = 180;
+const DEFAULT_AIRING_MINUTES = 5;
+const DEFAULT_AIRING_INTERVAL_HOURS = 0;
 
 const scenarioName = {
     ru: "💨 Автоматизация вытяжки по присутствию и влажности",
@@ -112,7 +125,12 @@ info = {
         autoOnLockTimerId: undefined,
 
         cooldownUntil: undefined,
-        cooldownTimerId: undefined
+        cooldownTimerId: undefined,
+
+        airingRequestedReason: undefined,
+        airingRunReason: undefined,
+        airingTimerId: undefined,
+        airingIntervalTimerId: undefined
     }
 };
 
@@ -168,10 +186,21 @@ function consumeScenarioStartFlag(variables) {
 function handleScenarioStart(variables, options, logSource, on) {
     if (on) {
         beginRun(variables, options, logSource, RUN_BY_RESTART);
+        // Режим «Не включать при присутствии» (§11.1): вытяжка не работает,
+        // пока человек в помещении, — в том числе и после перезапуска хаба.
+        if (isNoRunWhilePresent(options) && computeOccupancyActive(options)) {
+            startPresenceAccumulationIfActive(variables, options, logSource);
+            turnOffBecausePresent(variables, options, logSource);
+            return;
+        }
         armOffTimer(variables, options, logSource);
         return;
     }
     startPresenceAccumulationIfActive(variables, options, logSource);
+    // Перезапуск хаба обнуляет отсчёт периодической вентиляции (§12.6): variables
+    // его не переживают, поэтому первое проветривание случится через «Интервал»
+    // после старта. Включённая вытяжка отсчёта не ведёт — он пойдёт от её выключения.
+    armAiringIntervalTimer(variables, options, logSource);
 }
 
 // Вытяжку включили извне (приложение, сцена, выключатель на самой вытяжке):
@@ -565,6 +594,13 @@ function onOccupancyChanged(variables, options, logSource) {
         cancelGuardedTimeout(variables, options, logSource, TIMER_PRESENCE_RESET);
         restartAutoOnLockSilence(variables, options, logSource);
         startPresenceAccumulationIfActive(variables, options, logSource);
+        // Инверсия смысла присутствия (§11): активность — не повод включить,
+        // а повод выключить. Накопление при этом всё равно идёт: им решается,
+        // засчитан ли визит и полагается ли за него проветривание.
+        if (isNoRunWhilePresent(options)) {
+            turnOffBecausePresent(variables, options, logSource);
+            return;
+        }
         tryAutoTurnOn(variables, options, logSource);
         return;
     }
@@ -637,9 +673,195 @@ function armPresenceResetTimer(variables, options, logSource) {
 }
 
 function resetPresenceSession(variables, options, logSource) {
+    // Момент, когда уход человека подтверждён «Задержкой выключения», и заодно
+    // последний момент, когда ещё видно, был ли визит засчитан (§11.2, §11.3).
+    const visitCounted = isPresenceReady(variables);
     variables.presenceSinceAt = undefined;
     cancelGuardedTimeout(variables, options, logSource, TIMER_ON_DELAY);
     logInfo("Накопление присутствия обнулено: активности не было " + numberOption(options, "offDelaySeconds", DEFAULT_OFF_DELAY_SECONDS) + " с", logSource, options.debug);
+    requestAiringAfterVisit(variables, options, logSource, visitCounted);
+}
+
+// --- Режим «Не включать при присутствии» (§11) -------------------------------
+// Инверсия логики присутствия: пока человек в помещении, вытяжка молчит, а
+// проветривание полагается за уже закончившийся визит. Весь режим живёт за одним
+// этим флагом — при выключенной опции ни одна ветка ниже не работает.
+
+function isNoRunWhilePresent(options) {
+    return options.noRunWhilePresent === true;
+}
+
+// Человек ушёл и уход подтверждён — просим проветрить. Право на проветривание
+// даёт только визит, который продержался «Задержку включения» (§11.3); «Время
+// проветривания» 0 мин означает, что режим сводится к запрету включаться (§11.7).
+function requestAiringAfterVisit(variables, options, logSource, visitCounted) {
+    if (!isNoRunWhilePresent(options)) {
+        return;
+    }
+    if (!visitCounted) {
+        logInfo("Проветривания после ухода не будет: присутствие не продержалось «Задержку включения»", logSource, options.debug);
+        return;
+    }
+    if (airingRunMinutes(options) <= 0) {
+        logInfo("Проветривания после ухода не будет: «Время проветривания» 0 мин", logSource, options.debug);
+        return;
+    }
+    variables.airingRequestedReason = AIRING_AFTER_VISIT;
+    logInfo("Человек ушёл — пробую включить проветривание", logSource, options.debug);
+    tryAutoTurnOn(variables, options, logSource);
+}
+
+// Присутствие вернулось: вытяжка гаснет немедленно — и это сильнее влажности
+// и минимального времени работы (§11.1, §11.4). Ручные входы запрет не
+// отменяет: он наложен на автоматику, а не на человека (§11.8).
+function turnOffBecausePresent(variables, options, logSource) {
+    // §11.11: пока «рубильник» запрещает автоматику, режим не делает ничего —
+    // ни проветривания, ни принудительного выключения. Иначе вышло бы несимметрично:
+    // включить вытяжку сценарий не может, а выключить может. В §7 запрет тоже
+    // действует только на новые включения и работающую вытяжку не гасит.
+    if (!isAutomationAllowed(options)) {
+        logInfo("Режим «Не включать при присутствии» не действует: автоматика запрещена выключателем «Разрешение автоматики»", logSource, options.debug);
+        return;
+    }
+    // Проветривание за прошлый визит больше не нужно: за новый визит будет новое.
+    clearAiringRequestOf(variables, AIRING_AFTER_VISIT);
+    if (!isFanCurrentlyOn(variables)) {
+        return;
+    }
+    const hold = manualHoldReason(variables, options);
+    if (hold) {
+        logInfo("Присутствие есть, но вытяжка остаётся включённой: " + hold, logSource, options.debug);
+        return;
+    }
+    logInfo("Присутствие есть — выключаю вытяжку (режим «Не включать при присутствии»)", logSource, options.debug);
+    clearOffTimer(variables, options, logSource);
+    // Паузу это выключение не заводит (§12.10a2): она защищает от дёрганья на
+    // границе порога, а здесь цикл ровно один. Иначе пауза заблокировала бы
+    // проветривание за тот самый визит, ради которого режим и нужен.
+    setFanOn(variables, options, logSource, false);
+}
+
+// --- Проветривание: один сеанс, два повода (§11, §12) -----------------------
+// «Включить на «Время проветривания» и выключить» — это один сеанс. Поводов у
+// него два: визит закончился (§11.2) и настал срок периодического проветривания
+// (§12). Повод лежит в variables.airingRunReason и решает только одно — какими
+// словами это назвать в логе. Всё остальное — длительность, безразличие к
+// влажности, выход, когда выключить не дали — у обоих поводов общее, ровно потому
+// что это один механизм, а не два похожих.
+
+// «Время проветривания» — одно понятие на оба повода: пользователь просил один
+// параметр «сколько проветривать», поэтому второй опции на то же самое нет.
+function airingRunMinutes(options) {
+    return numberOption(options, "airingMinutes", DEFAULT_AIRING_MINUTES);
+}
+
+function isAiringReason(reason) {
+    return reason === AIRING_AFTER_VISIT || reason === AIRING_PERIODIC;
+}
+
+function airingReasonText(reason) {
+    return reason === AIRING_AFTER_VISIT ? "проветривание после ухода человека" : "периодическая вентиляция";
+}
+
+// true, пока идёт проветривание: его временем распоряжается таймер проветривания,
+// а не обычный таймер выключения, и влажность его не продлевает и не обрывает
+// (§11.5, §12.8).
+function isAiringRunActive(variables) {
+    return isAiringReason(variables.airingRunReason);
+}
+
+// Единственное место, где гаснет просьба проветрить, каким бы поводом она ни была
+// вызвана: её съедает любой начатый сеанс (beginRun).
+function clearAiringRequest(variables) {
+    variables.airingRequestedReason = undefined;
+}
+
+// Снять просьбу, только если она именно этого повода. Вернувшееся присутствие
+// отменяет проветривание за визит (§11.1), а периодическое не трогает: при
+// человеке оно и так не включится (§12.2), и терять его незачем.
+function clearAiringRequestOf(variables, reason) {
+    if (variables.airingRequestedReason !== reason) {
+        return;
+    }
+    clearAiringRequest(variables);
+}
+
+// Начало сеанса: повод ставится до записи характеристики — от него зависит, кто
+// ведёт время этого сеанса, таймер проветривания или таймер выключения.
+function startAiringRun(variables, options, logSource, reason) {
+    logInfo("Включаю вытяжку: " + airingReasonText(reason), logSource, options.debug);
+    variables.airingRunReason = reason;
+    setFanOn(variables, options, logSource, true, RUN_BY_SENSOR);
+    armAiringRunTimer(variables, options, logSource, reason);
+}
+
+// Проветривание длится ровно «Время проветривания». Предельное время работы и
+// ручные входы действуют как везде.
+function armAiringRunTimer(variables, options, logSource, reason) {
+    cancelGuardedTimeout(variables, options, logSource, TIMER_AIRING);
+    const minutes = airingRunMinutes(options);
+    logInfo("Выключу через " + minutes + " мин — идёт " + airingReasonText(reason), logSource, options.debug);
+    scheduleGuardedTimeout(variables, TIMER_AIRING, minutes * MINUTE_MS, () => {
+        logInfo("Время проветривания истекло (" + airingReasonText(reason) + ")", variables.cachedFanService, options.debug);
+        tryAutoTurnOff(variables, options, variables.cachedFanService, true);
+        if (!isFanCurrentlyOn(variables) || variables[TIMER_OFF.field]) {
+            // Вытяжка погасла — или выключение сдвинуто «Минимальным временем
+            // работы», и доведёт его уже заведённый таймер выключения (§11.12, §12.4).
+            return;
+        }
+        // Выключить не дали: вернулась активность датчиков. Сеанс перестаёт
+        // быть проветриванием и дальше живёт по обычным правилам — его закончит
+        // обычный таймер выключения, когда активность снова спадёт. Ручное
+        // удержание сюда не относится: под ним по §7 бессилен и обычный таймер.
+        variables.airingRunReason = undefined;
+        armOffTimer(variables, options, variables.cachedFanService);
+    });
+}
+
+// --- Периодическое проветривание: отсчёт до срока (§12) ---------------------
+// Вытяжка давно не работала, активности на датчиках нет — проветрить самой.
+// Отсчёт идёт от момента, когда вытяжка последний раз выключилась, и любая её
+// работа начинает отсчёт заново (§12.1). «Интервал» 0 ч — механизма нет вовсе:
+// таймер не заводится ни при каком событии, и сценарий ведёт себя ровно так же,
+// как до появления опции (§12.7).
+
+function armAiringIntervalTimer(variables, options, logSource) {
+    cancelGuardedTimeout(variables, options, logSource, TIMER_AIRING_INTERVAL);
+    const hours = numberOption(options, "airingIntervalHours", DEFAULT_AIRING_INTERVAL_HOURS);
+    if (hours <= 0) {
+        return;
+    }
+    if (airingRunMinutes(options) <= 0) {
+        // Проветривать нечего: длительность берётся из «Времени проветривания».
+        return;
+    }
+    logInfo("Периодическое проветривание: проветрю через " + hours + " ч, если вытяжка не заработает раньше", logSource, options.debug);
+    scheduleGuardedTimeout(variables, TIMER_AIRING_INTERVAL, hours * HOUR_MS, () => {
+        onAiringIntervalReached(variables, options, variables.cachedFanService);
+    });
+}
+
+// Срок пришёл. Активность датчиков — повода нет (§12.2): случай пропускается,
+// а отсчёт начинается заново, чтобы следующая попытка была через «Интервал».
+function onAiringIntervalReached(variables, options, logSource) {
+    if (isFanCurrentlyOn(variables)) {
+        // Вытяжка работает — отсчёт всё равно пойдёт заново от её выключения.
+        return;
+    }
+    if (computeOccupancyActive(options)) {
+        logInfo("Периодическое проветривание пропущено: датчики видят активность", logSource, options.debug);
+        armAiringIntervalTimer(variables, options, logSource);
+        return;
+    }
+    // Как и проветривание за визит, это может начаться не сразу: паузу,
+    // «рубильник» и блокировки проверяет tryAutoTurnOn, а просьба остаётся в силе
+    // до ближайшего повода проверить включение — например до конца паузы (§12.4).
+    // Просьба хранит один повод: если проветривание за визит уже было запрошено,
+    // эта запись его затирает. Наблюдаемой разницы нет — сеанс той же длительности,
+    // меняется только текст в логе (§12.10b).
+    variables.airingRequestedReason = AIRING_PERIODIC;
+    logInfo("Настал срок периодического проветривания — пробую включить вытяжку", logSource, options.debug);
+    tryAutoTurnOn(variables, options, logSource);
 }
 
 // --- Влажность (§4) ---------------------------------------------------------
@@ -744,18 +966,58 @@ function tryAutoTurnOn(variables, options, logSource) {
         return;
     }
 
-    const byPresence = isPresenceReady(variables);
-    const byHumidity = options.humidityStartsFan === true && isHumidityHigh(options);
-    if (!byPresence && !byHumidity) {
-        logInfo("Авто-включение отклонено: присутствие ещё не набралось и высокой влажности нет", logSource, options.debug);
+    // Условие 7 (§5): запрет режима «Не включать при присутствии» отменяет любой
+    // повод — и присутствие, и влажность. Он сильнее влажности намеренно.
+    const noRunWhilePresentMode = isNoRunWhilePresent(options);
+    if (noRunWhilePresentMode && computeOccupancyActive(options)) {
+        logInfo("Авто-включение отклонено: в помещении есть присутствие (режим «Не включать при присутствии»)", logSource, options.debug);
         return;
     }
 
-    logInfo(byPresence ? "Включаю вытяжку: присутствие набрано" : "Включаю вытяжку: высокая влажность", logSource, options.debug);
+    const reason = chooseTurnOnReason(variables, options);
+    if (!reason) {
+        logInfo(noRunWhilePresentMode
+            ? "Авто-включение отклонено: проветривание не нужно и высокой влажности нет"
+            : "Авто-включение отклонено: присутствие ещё не набралось и высокой влажности нет", logSource, options.debug);
+        return;
+    }
+
+    if (isAiringReason(reason)) {
+        startAiringRun(variables, options, logSource, reason);
+        return;
+    }
+
+    logInfo(reason === ON_BY_PRESENCE ? "Включаю вытяжку: присутствие набрано" : "Включаю вытяжку: высокая влажность", logSource, options.debug);
     setFanOn(variables, options, logSource, true, RUN_BY_SENSOR);
     // Включение без активности датчиков (по влажности или на остатке сессии):
     // таймер выключения нужен сразу, иначе гасить будет нечему.
     armOffTimer(variables, options, logSource);
+}
+
+// Единственное место, где решается, зачем включать вытяжку: поводы перечислены
+// по убыванию силы, первый подошедший выигрывает, пустая строка — повода нет.
+// Проветривание за визит сильнее влажности намеренно (§11.13), а периодическое —
+// самый слабый повод: при активности датчиков его нет вовсе (§12.2), а настоящий
+// повод ведёт сеанс своими правилами. Отсчёт до следующего периодического
+// проветривания всё равно пойдёт заново от выключения вытяжки (§12.1).
+function chooseTurnOnReason(variables, options) {
+    const requested = variables.airingRequestedReason;
+    const airingAllowed = isAiringReason(requested) && airingRunMinutes(options) > 0;
+    // В режиме §11 набранное присутствие поводом не является: поводом становится
+    // закончившийся визит, за который полагается проветривание (§11.2).
+    if (airingAllowed && requested === AIRING_AFTER_VISIT && isNoRunWhilePresent(options)) {
+        return AIRING_AFTER_VISIT;
+    }
+    if (!isNoRunWhilePresent(options) && isPresenceReady(variables)) {
+        return ON_BY_PRESENCE;
+    }
+    if (options.humidityStartsFan === true && isHumidityHigh(options)) {
+        return ON_BY_HUMIDITY;
+    }
+    if (airingAllowed && requested === AIRING_PERIODIC && !computeOccupancyActive(options)) {
+        return AIRING_PERIODIC;
+    }
+    return "";
 }
 
 // silenceReached — тишина по датчикам уже набрана (сработал таймер выключения).
@@ -778,14 +1040,18 @@ function tryAutoTurnOff(variables, options, logSource, silenceReached) {
         return;
     }
 
-    if (!isHumiditySatisfied(options)) {
+    // Проветривание влажность не заканчивает и не продлевает (§11.5, §12.8):
+    // его время отмерено «Временем проветривания», и переоценивать тут нечего.
+    if (!isAiringRunActive(variables) && !isHumiditySatisfied(options)) {
         variables.offPending = silenceReached === true;
         logInfo(() => "Выключение отложено: влажность " + readHumidity(options.humiditySensor) +
             " % выше рабочего порога " + computeEffectiveTarget(options) + " %", logSource, options.debug);
         return;
     }
 
-    logInfo("Выключаю вытяжку: активности нет, влажность в норме", logSource, options.debug);
+    logInfo(isAiringRunActive(variables)
+        ? "Выключаю вытяжку: проветривание закончено"
+        : "Выключаю вытяжку: активности нет, влажность в норме", logSource, options.debug);
     setFanOn(variables, options, logSource, false);
     armCooldown(variables, options, logSource);
 }
@@ -816,6 +1082,15 @@ function fanHoldReason(variables, options) {
     if (computeOccupancyActive(options)) {
         return "датчики видят активность";
     }
+    return manualHoldReason(variables, options);
+}
+
+// Та же причина, но без датчиков: в режиме «Не включать при присутствии»
+// активность как раз и есть повод выключить, а ручное — по-прежнему держит.
+function manualHoldReason(variables, options) {
+    if (isAnyManualSwitchOn(options)) {
+        return "ручной выключатель в On";
+    }
     if (variables.manualHold) {
         return "активно ручное удержание";
     }
@@ -824,6 +1099,12 @@ function fanHoldReason(variables, options) {
 
 // Заводит таймер выключения, если вытяжку ничто не удерживает включённой.
 function armOffTimer(variables, options, logSource) {
+    // Временем проветривания распоряжается его собственный таймер (§11.2, §12.3):
+    // иначе событие «активности нет» переписало бы его «Задержкой выключения».
+    if (isAiringRunActive(variables)) {
+        logInfo("Идёт проветривание — временем работы распоряжается его собственный таймер", logSource, options.debug);
+        return;
+    }
     clearOffTimer(variables, options, logSource);
     const hold = fanHoldReason(variables, options);
     if (hold) {
@@ -1049,6 +1330,10 @@ function beginRun(variables, options, logSource, runOrigin) {
     }
     variables.runStartedAt = Date.now();
     variables.offPending = false;
+    // Любая работа обнуляет отсчёт периодической вентиляции (§12.1): пока вытяжка
+    // работает, отсчёта нет — он пойдёт заново от её выключения, в endRun.
+    clearAiringRequest(variables);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_AIRING_INTERVAL);
     armMaxRunTimer(variables, options, logSource);
     applyFanSpeed(variables.cachedFanService, options, logSource);
 }
@@ -1061,7 +1346,11 @@ function endRun(variables, options, logSource) {
     variables.offPending = false;
     // У выключенной вытяжки глотать нажатие кнопки не за чем.
     variables.lastSensorAutoOnAt = undefined;
+    variables.airingRunReason = undefined;
     cancelGuardedTimeout(variables, options, logSource, TIMER_MAX_RUN);
+    cancelGuardedTimeout(variables, options, logSource, TIMER_AIRING);
+    // Вытяжка погасла — с этого момента идёт отсчёт до периодической вентиляции (§12.1).
+    armAiringIntervalTimer(variables, options, logSource);
 }
 
 // «Ручное удержание» (§7) поднимает только включение, которое хаб видит как
@@ -1714,6 +2003,46 @@ function createOptions() {
         value: DEFAULT_MAX_RUN_MINUTES,
         minValue: 0,
         maxValue: 10080,
+        step: 1
+    };
+
+    options.groupPresenceMode = optionGroupHeader("  РЕЖИМ ПРИСУТСТВИЯ", "  PRESENCE MODE");
+
+    options.noRunWhilePresent = {
+        name: {ru: "Не включать при присутствии", en: "Do not run while someone is present"},
+        desc: {
+            ru: "Инвертирует смысл присутствия: пока датчики видят человека, вытяжка выключена, а работающая — гаснет сразу, даже если влажность высокая. После ухода (подтверждённого «Задержкой выключения») вытяжка включается на «Время проветривания», чтобы почистить воздух. Визит засчитывается, только если присутствие продержалось «Задержку включения». Ручные входы работают как обычно.",
+            en: "Inverts the meaning of presence: while the sensors see a person the fan stays off, and a running fan is switched off at once, even with high humidity. After the person leaves (confirmed by the off delay) the fan runs for the airing time to clear the air. A visit counts only if presence lasted longer than the on delay. Manual inputs keep working as usual."
+        },
+        type: "Boolean",
+        value: false
+    };
+
+    options.airingMinutes = {
+        name: {ru: "Время проветривания (мин)", en: "Airing time (min)"},
+        desc: {
+            ru: "Сколько минут вытяжка проветривает помещение. Это время используют оба повода: проветривание после ухода человека в режиме «Не включать при присутствии» и «Интервал периодической вентиляции». Влажность его не продлевает и не сокращает; в режиме «Не включать при присутствии» вернувшееся присутствие выключает вытяжку сразу, не дожидаясь минимального времени работы. Значение 0 — проветривания нет ни по одному поводу: режим «Не включать при присутствии» сводится к запрету включаться при человеке, а периодическая вентиляция не запускается.",
+            en: "How many minutes the fan ventilates the room. Both reasons use this time: the airing after the person leaves in «Do not run while someone is present» mode, and the periodic airing interval. Humidity neither extends nor shortens it; in «Do not run while someone is present» mode returning presence switches the fan off at once, without waiting for the minimum run time. 0 means no airing for either reason: the mode is then only a ban on running while someone is present, and periodic airing never starts."
+        },
+        type: "Integer",
+        value: DEFAULT_AIRING_MINUTES,
+        minValue: 0,
+        maxValue: 1440,
+        step: 1
+    };
+
+    options.groupPeriodicAiring = optionGroupHeader("  ПЕРИОДИЧЕСКАЯ ВЕНТИЛЯЦИЯ", "  PERIODIC AIRING");
+
+    options.airingIntervalHours = {
+        name: {ru: "Интервал периодической вентиляции (ч)", en: "Periodic airing interval (hours)"},
+        desc: {
+            ru: "Если вытяжка не работала столько часов подряд и датчики активности молчат, сценарий сам проветривает помещение «Время проветривания» минут. Отсчёт идёт от момента, когда вытяжка последний раз выключилась: любая работа — по присутствию, по влажности, ручная, проветривание после ухода — начинает его заново; перезапуск хаба тоже. Как любое авто-включение, вентиляция подчиняется «Разрешению автоматики», паузе перед повторным включением и пределам времени работы. Значение 0 — выключено; рекомендованное значение — 6.",
+            en: "If the fan has not run for this many hours in a row and the activity sensors are quiet, the scenario ventilates the room by itself for the airing time. The countdown starts from the moment the fan was last switched off: any run — by presence, by humidity, manual or an airing — restarts it, and so does a hub restart. Like any automatic turn-on, airing obeys the automation gate, the cooldown before restart and the run time limits. 0 disables it; the recommended value is 6."
+        },
+        type: "Integer",
+        value: DEFAULT_AIRING_INTERVAL_HOURS,
+        minValue: 0,
+        maxValue: 168,
         step: 1
     };
 

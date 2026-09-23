@@ -29,6 +29,9 @@
     "minRunMinutes": 0,
     "cooldownMinutes": 0,
     "maxRunMinutes": 180,
+    "noRunWhilePresent": false,
+    "airingMinutes": 5,
+    "airingIntervalHours": 0,
     "notifyOnDryTimeout": false,
     "debug": false
   },

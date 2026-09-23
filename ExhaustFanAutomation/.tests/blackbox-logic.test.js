@@ -42,6 +42,9 @@ function baseOptions(overrides) {
     minRunMinutes: 0,
     cooldownMinutes: 0,
     maxRunMinutes: 180,
+    noRunWhilePresent: false,
+    airingMinutes: 5,
+    airingIntervalHours: 0,
     notifyOnDryTimeout: false,
     debug: false,
   };
@@ -243,6 +246,30 @@ describe('§4 Опции — состав и значения по умолча�
     expect(options.maxRunMinutes.value).toBe(180);
   });
 
+  it('режим присутствия: noRunWhilePresent false, airingMinutes 5 (§20/§21)', ({ scenario }) => {
+    const options = scenario.info().options;
+    expect(options.noRunWhilePresent).toBeTruthy();       // опция объявлена
+    expect(options.noRunWhilePresent.type).toBe('Boolean');
+    expect(options.noRunWhilePresent.value).toBe(false);  // по умолчанию режим выключен
+    expect(options.airingMinutes).toBeTruthy();
+    expect(options.airingMinutes.type).toBe('Integer');
+    expect(options.airingMinutes.value).toBe(5);          // общая длительность §20 и §21
+  });
+
+  it('периодическая вентиляция: airingIntervalHours 0 (§21)', ({ scenario }) => {
+    const options = scenario.info().options;
+    expect(options.airingIntervalHours).toBeTruthy();     // опция объявлена
+    expect(options.airingIntervalHours.type).toBe('Integer');
+    expect(options.airingIntervalHours.value).toBe(0);    // по умолчанию механизм выключен
+  });
+
+  it('отдельной опции длительности у периодической вентиляции нет (§21)', ({ scenario }) => {
+    const options = scenario.info().options;
+    expect(options.airingDurationMinutes).toBeUndefined();
+    expect(options.periodicAiringMinutes).toBeUndefined();
+    expect(options.purgeMinutes).toBeUndefined();         // прежнее имя убрано вместе с ним
+  });
+
   it('уведомления и отладка: notifyOnDryTimeout false, debug false', ({ scenario }) => {
     const options = scenario.info().options;
     expect(options.notifyOnDryTimeout).toBeTruthy();    // опция объявлена
@@ -269,6 +296,10 @@ describe('§4 Опции — состав и значения по умолча�
     expect(options.minRunMinutes.maxValue).toBe(1440);
     expect(options.cooldownMinutes.maxValue).toBe(1440);
     expect(options.maxRunMinutes.maxValue).toBe(10080);
+    expect(options.airingMinutes.minValue).toBe(0);
+    expect(options.airingMinutes.maxValue).toBe(1440);
+    expect(options.airingIntervalHours.minValue).toBe(0);
+    expect(options.airingIntervalHours.maxValue).toBe(168);
   });
 });
 
@@ -2456,5 +2487,1313 @@ describe('§4 Режим отладки (R29i)', () => {
     motionChar(motion).setValue(false);
     time.advance('300s');
     expect(logs.all().length).toBe(0);
+  });
+});
+
+// ============================================================================
+
+// Опции режима §20 «Не включать при присутствии».
+// Явные значения вместо дефолтов §4, чтобы шаги теста читались в секундах:
+//   onDelaySeconds 60  — сколько человек должен пробыть, чтобы визит засчитался;
+//   offDelaySeconds 60 — подтверждение того, что человек действительно ушёл;
+//   airingMinutes 5     — продувка 300 с;
+//   minRunMinutes 0, maxRunMinutes 0 — пределы выключены, чтобы не мешать границам.
+function modeOptions(overrides) {
+  const base = {
+    noRunWhilePresent: true,
+    onDelaySeconds: 60,
+    offDelaySeconds: 60,
+    airingMinutes: 5,
+    minRunMinutes: 0,
+    maxRunMinutes: 0,
+  };
+  if (overrides) {
+    for (const key in overrides) base[key] = overrides[key];
+  }
+  return baseOptions(base);
+}
+
+describe('§20 Режим «Не включать при присутствии» — режим выключен, поведение прежнее', () => {
+  it('режим выключен — включение по присутствию работает как раньше', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      noRunWhilePresent: false,
+      motion1: uuidOf(motion, HS.MotionSensor),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('59s');
+    expect(isOn(fan)).toBe(false);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);        // накопление присутствия, §8 — как до режима
+  });
+
+  it('режим выключен — уход гасит вытяжку, продувка не начинается', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      noRunWhilePresent: false,
+      motion1: uuidOf(motion, HS.MotionSensor),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);       // обычное авто-выключение
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // airingMinutes при выключенном режиме инертна
+  });
+
+  it('режим выключен — включение по влажности при человеке в комнате работает как раньше', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 40);
+    const options = modeOptions({
+      noRunWhilePresent: false,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 600,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    humidityChar(humidity).setValue(95);
+    expect(isOn(fan)).toBe(true);        // §8: высокая влажность — самостоятельный повод
+  });
+});
+
+// ============================================================================
+
+describe('§20 Режим «Не включать при присутствии» — запрет, пока человек внутри', () => {
+  it('присутствие активно — авто-включение по присутствию не выполняется', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);       // накопление набрано, но включения нет
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // и дальше, пока человек внутри
+  });
+
+  it('запрет сильнее влажности: humidityStartsFan + высокая влажность + присутствие → не включается', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 40);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 600,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    humidityChar(humidity).setValue(95);         // 95 ≥ 60 + 10 — «высокая»
+    expect(isOn(fan)).toBe(false);
+
+    time.advance('600s');
+    expect(isOn(fan)).toBe(false);
+  });
+
+  it('влажность включает вытяжку в этом режиме, когда присутствия нет', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 40);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 600,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    humidityChar(humidity).setValue(95);
+    expect(isOn(fan)).toBe(true);        // запрет привязан к присутствию, а не к режиму
+  });
+
+  it('работа по влажности прекращается, как только присутствие появилось', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 40);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 600,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    humidityChar(humidity).setValue(95);
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);       // работающая вытяжка гаснет сразу
+  });
+});
+
+// ============================================================================
+
+describe('§20 Режим «Не включать при присутствии» — продувка после ухода', () => {
+  it('продувка начинается ровно по истечении Задержки выключения', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');                 // визит ровно onDelaySeconds — засчитан
+    expect(isOn(fan)).toBe(false);
+
+    motionChar(motion).setValue(false);
+    time.advance('59s');
+    expect(isOn(fan)).toBe(false);       // уход ещё не подтверждён
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);        // подтверждён — продувка
+  });
+
+  it('продувка длится ровно airingMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      offDelaySeconds: 600,              // заведомо больше продувки — не мешает границе
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('600s');
+    expect(isOn(fan)).toBe(true);        // продувка началась здесь
+
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);       // ровно 300 с = airingMinutes
+  });
+
+  it('продувку не обрезает Задержка выключения', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('61s');
+    expect(isOn(fan)).toBe(true);        // 60 с без активности прошли, продувка идёт
+    time.advance('238s');
+    expect(isOn(fan)).toBe(true);        // 299 с продувки
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);
+  });
+
+  it('высокая влажность продувку не продлевает', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 95);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      targetHumidity: 60,
+      humidityStartsFan: false,
+      offDelaySeconds: 600,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);       // только время продувки, влажность не при чём
+  });
+
+  it('продувка одна на визит — сама себя не перезапускает', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);       // продувка закончилась
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // нового визита не было — и продувки нет
+  });
+
+  it('короткий визит (10 с при накоплении 120 с) — продувки нет', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 120,
+      offDelaySeconds: 30,               // 10 + 30 < 120: сессия гарантированно обнулена
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('10s');
+    motionChar(motion).setValue(false);
+    time.advance('30s');
+    expect(isOn(fan)).toBe(false);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // визит не засчитан — продувки не было
+  });
+
+  it('airingMinutes = 0 — продувки нет', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      airingMinutes: 0,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // режим сводится к «никогда не включаться»
+  });
+});
+
+// ============================================================================
+
+describe('§20 Режим «Не включать при присутствии» — возврат, предел, ручные входы', () => {
+  it('возврат во время продувки — выключение сразу', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('10s');
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);       // «если опять зашёл и работала — выключаем»
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);       // и не возвращается, пока человек внутри
+  });
+
+  it('возврат во время продувки сильнее minRunMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      minRunMinutes: 30,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('10s');                 // минимальное время работы далеко не вышло
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);
+  });
+
+  it('maxRunMinutes остаётся верхним пределом продувки', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      airingMinutes: 60,                  // продувка 3600 с
+      maxRunMinutes: 10,                 // предел 600 с — раньше
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('599s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);       // предельный таймер, а не конец продувки
+  });
+
+  it('ручной выключатель включает вытяжку при активном присутствии', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const wall = addSwitch(hub, 3, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(wall, HS.Switch),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    switchChar(wall).setValue(true);
+    expect(isOn(fan)).toBe(true);        // запрет — на автоматику, а не на человека
+  });
+
+  it('ручной выключатель в On удерживает вытяжку, пока человек внутри', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const wall = addSwitch(hub, 3, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(wall, HS.Switch),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    switchChar(wall).setValue(true);
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(true);        // §13.1 выше запрета §20
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+  });
+
+  it('кнопка включает вытяжку при активном присутствии', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(true);
+  });
+});
+
+// ============================================================================
+
+describe('§20 Режим «Не включать при присутствии» — источник включения и удержание', () => {
+  // --- §20.1a: обратный порядок. Пара с двумя утверждениями ниже («присутствие гасит»)
+  // стоит рядом намеренно: по отдельности каждое из четырёх фиксировало бы просто исходное
+  // состояние вытяжки, различает их только сопоставление порядков.
+
+  it('§20.1a присутствие уже активно, включение кнопкой — вытяжка остаётся работать', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      noAutoOffWhenManualOn: false,      // удержание не поднимается: держать её нечему,
+      minRunMinutes: 0,                  // кроме самого исключения §20.1a
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);   // человек уже внутри
+    time.advance('10s');
+    expect(isOn(fan)).toBe(false);       // режим не включает по присутствию (§20.1)
+
+    buttonChar(button).setValue(0);      // включает сам, при себе
+    expect(isOn(fan)).toBe(true);        // нажал при себе — режим не отменяет (§20.1a)
+
+    time.advance('600s');
+    expect(isOn(fan)).toBe(true);        // и таймеры её не гасят, пока человек внутри
+  });
+
+  it('§20.1a присутствие уже активно, включение извне (приложение/сцена) — остаётся работать', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      noAutoOffWhenManualOn: false,
+      minRunMinutes: 0,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('10s');
+    expect(isOn(fan)).toBe(false);
+
+    externalSet(scenario, fan, vars, options, true);
+    expect(isOn(fan)).toBe(true);        // работа пришла к присутствию — не гасим
+
+    time.advance('600s');
+    expect(isOn(fan)).toBe(true);
+  });
+
+  it('вытяжку, включённую кнопкой, присутствие гасит', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      noAutoOffWhenManualOn: false,      // удержание не поднимается
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(true);
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);       // источник включения роли не играет
+  });
+
+  it('вытяжку, включённую извне (приложение/сцена), присутствие гасит', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      noAutoOffWhenManualOn: false,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    externalSet(scenario, fan, vars, options, true);
+    expect(isOn(fan)).toBe(true);
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);
+  });
+
+  it('поднятое ручное удержание (noAutoOffWhenManualOn) присутствие не отменяет', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      noAutoOffWhenManualOn: true,       // кнопочное включение поднимает удержание (§12)
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(true);
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(true);        // удержание — явное «держать включённой»
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+  });
+});
+
+// ============================================================================
+
+describe('§20 Режим «Не включать при присутствии» — пауза, рубильник, минимальное время', () => {
+  it('окончание продувки запускает паузу — следующая продувка её ждёт', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      cooldownMinutes: 10,               // 600 с паузы после авто-выключения
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);       // продувка закончилась — пауза пошла
+
+    motionChar(motion).setValue(true);   // второй визит
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);       // 120 с из 600 — продувки нет
+  });
+
+  it('пауза выключена — второй визит даёт новую продувку', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      cooldownMinutes: 0,                // контроль к предыдущему тесту
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);        // ровно те же шаги, что и при паузе 10 мин
+  });
+
+  it('автоматика запрещена — продувки после ухода нет', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const gate = addSwitch(hub, 3, false);   // рубильник в Off — автоматика запрещена (§11)
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      gateAutoSwitch: uuidOf(gate, HS.Switch),
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);       // те же шаги при разрешённой автоматике дают продувку
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);
+  });
+
+  it('автоматика запрещена — возврат человека вытяжку не гасит', ({ hub, scenario }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const button = addButton(hub, 3);
+    const gate = addSwitch(hub, 4, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      manualControl1: uuidOf(button, HS.StatelessProgrammableSwitch),
+      gateAutoSwitch: uuidOf(gate, HS.Switch),
+      gateBlocksManualInputs: false,     // ручные входы рубильник не трогает
+      noAutoOffWhenManualOn: false,      // удержания нет — гасило бы §20.1
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    buttonChar(button).setValue(0);
+    expect(isOn(fan)).toBe(true);
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(true);        // запрещённая автоматика не выключает (§11)
+  });
+
+  it('minRunMinutes больше airingMinutes продлевает продувку', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      airingMinutes: 5,                   // 300 с
+      minRunMinutes: 10,                 // 600 с — нижняя граница любого сеанса
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('300s');
+    expect(isOn(fan)).toBe(true);        // продувка вышла, минимальное время нет
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);       // ровно minRunMinutes от включения
+  });
+
+  it('продувка при высокой влажности всё равно длится ровно airingMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const humidity = addHumidity(hub, 3, 40);
+    const options = modeOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 600,
+      cooldownMinutes: 1,                // пауза мешает мгновенному возврату по влажности
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    motionChar(motion).setValue(true);
+    humidityChar(humidity).setValue(95);
+    expect(isOn(fan)).toBe(false);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('600s');
+    expect(isOn(fan)).toBe(true);        // продувка, хотя повод по влажности тоже есть
+
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);       // сеанс ведётся как продувка, влажность не продлевает
+  });
+
+  it('старт хаба с включённой вытяжкой и активным присутствием: гасит и начинает сессию', ({ hub, scenario, time }) => {
+    const fan = addFan(hub, { on: true });
+    const motion = addMotion(hub, 2, true);      // человек внутри уже на старте
+    const options = modeOptions({ motion1: uuidOf(motion, HS.MotionSensor) });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+    expect(isOn(fan)).toBe(false);               // человек внутри — вытяжка молчит
+
+    time.advance('60s');                         // сессия присутствия идёт со старта
+    expect(isOn(fan)).toBe(false);
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);                // визит засчитан — продувка после ухода
+  });
+});
+
+// ============================================================================
+
+// Опции §21 «Периодическая вентиляция». Явные значения вместо дефолтов §4,
+// чтобы шаги теста читались в секундах:
+//   airingIntervalHours 1 — интервал ожидания 3600 с;
+//   airingMinutes 5       — вентиляция 300 с;
+//   onDelaySeconds 60     — накопление присутствия, когда слот датчика заполнен;
+//   offDelaySeconds 600   — заведомо больше вентиляции, чтобы выключение по её
+//                           окончании не спутать с обычным авто-выключением (§10);
+//   minRunMinutes 0, maxRunMinutes 0, cooldownMinutes 0 — пределы и пауза выключены,
+//                           чтобы не мешать границам;
+//   noRunWhilePresent false — режим §20 по умолчанию выключен.
+function airingOptions(overrides) {
+  const base = {
+    airingIntervalHours: 1,
+    airingMinutes: 5,
+    onDelaySeconds: 60,
+    offDelaySeconds: 600,
+    minRunMinutes: 0,
+    cooldownMinutes: 0,
+    maxRunMinutes: 0,
+    noRunWhilePresent: false,
+  };
+  if (overrides) {
+    for (const key in overrides) base[key] = overrides[key];
+  }
+  return baseOptions(base);
+}
+
+describe('§21 Периодическая вентиляция — интервал и длительность', () => {
+  it('вентиляция включается ровно по истечении интервала (§21.6: отсчёт от старта)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions();
+    boot(scenario, fan, {}, options);
+
+    time.advance('3599s');
+    expect(isOn(fan)).toBe(false);        // интервал ещё не истёк
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // ровно 3600 с = airingIntervalHours
+  });
+
+  it('вентиляция длится ровно airingMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions();
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // ровно 300 с = airingMinutes
+  });
+
+  it('Задержка выключения вентиляцию не обрезает (§21.3)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    // offDelaySeconds 60 < вентиляции 300 с; датчик влажности не выбран, поэтому
+    // условие §7 выполнено — обычное авто-выключение сработало бы на 60-й секунде.
+    const options = airingOptions({ offDelaySeconds: 60 });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('61s');
+    expect(isOn(fan)).toBe(true);         // 60 с без активности прошли, вентиляция идёт
+    time.advance('238s');
+    expect(isOn(fan)).toBe(true);         // 299 с вентиляции
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // выключение по её окончании, не по задержке
+  });
+
+  it('вторая вентиляция — через интервал после окончания первой, пауза выключена (§21.1)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions({ cooldownMinutes: 0 });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);        // t = 3900 с: первая вентиляция кончилась
+
+    time.advance('3599s');
+    expect(isOn(fan)).toBe(false);        // t = 7499 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 7500 с = 3900 + 3600
+  });
+});
+
+// ============================================================================
+
+describe('§21 Периодическая вентиляция — выключенный механизм и присутствие', () => {
+  it('airingIntervalHours = 0 — вытяжка не включается никогда', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions({ airingIntervalHours: 0, airingMinutes: 5 });
+    boot(scenario, fan, {}, options);
+
+    time.advance('168h');                 // весь верх диапазона опции
+    expect(isOn(fan)).toBe(false);
+    time.advance('168h');
+    expect(isOn(fan)).toBe(false);        // и дальше — механизм выключен целиком
+  });
+
+  it('присутствие в момент истечения интервала — вентиляции нет (§21.2)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    // Накопление присутствия заведомо не наберётся за время теста, поэтому
+    // обычное включение по присутствию (§8) картину не путает.
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 86400,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);    // человек внутри
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);        // интервал истёк, но активность есть
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);        // пока человек внутри — вентиляции нет
+  });
+
+  it('те же шаги без присутствия дают вентиляцию', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 86400,
+    });
+    const vars = {};
+    boot(scenario, fan, vars, options);
+
+    time.advance('3600s');                // датчик неактивен — единственное отличие
+    expect(isOn(fan)).toBe(true);
+  });
+});
+
+// ============================================================================
+
+describe('§21 Периодическая вентиляция — обнуление отсчёта (§21.1)', () => {
+  it('работа по присутствию переносит следующую вентиляцию на интервал вперёд', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);         // t = 60 с: включение по присутствию (§8)
+    motionChar(motion).setValue(false);
+    time.advance('59s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // t = 120 с: обычное авто-выключение (§10)
+
+    time.advance('3480s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал от старта истёк, а вентиляции нет
+    time.advance('119s');
+    expect(isOn(fan)).toBe(false);        // t = 3719 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 3720 с = 120 + 3600: отсчёт от выключения
+  });
+
+  it('ручная работа переносит следующую вентиляцию на интервал вперёд', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const sw = addSwitch(hub, 2, false);
+    const options = airingOptions({ manualControl1: uuidOf(sw, HS.Switch) });
+    boot(scenario, fan, {}, options);
+
+    switchChar(sw).setValue(true);
+    expect(isOn(fan)).toBe(true);         // ручное включение
+    time.advance('60s');
+    switchChar(sw).setValue(false);
+    expect(isOn(fan)).toBe(false);        // t = 60 с: ручной Switch в Off гасит сразу (§12)
+
+    time.advance('3540s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал от старта истёк, а вентиляции нет
+    time.advance('59s');
+    expect(isOn(fan)).toBe(false);        // t = 3659 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 3660 с = 60 + 3600
+  });
+
+  it('работа по влажности переносит следующую вентиляцию на интервал вперёд', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const humidity = addHumidity(hub, 2, 40);
+    const options = airingOptions({
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      humidityStartsFan: true,
+      targetHumidity: 60,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    humidityChar(humidity).setValue(95);  // 95 ≥ 60 + 10 — высокая, самостоятельный повод (§8)
+    expect(isOn(fan)).toBe(true);
+    humidityChar(humidity).setValue(50);  // помещение высушено — условие §7 выполнено
+    time.advance('59s');
+    expect(isOn(fan)).toBe(true);         // таймер выключения ещё идёт (§10)
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // t = 60 с: авто-выключение
+
+    time.advance('3540s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал от старта истёк, а вентиляции нет
+    time.advance('59s');
+    expect(isOn(fan)).toBe(false);        // t = 3659 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 3660 с = 60 + 3600
+  });
+
+  it('продувка §20 переносит следующую вентиляцию на интервал вперёд', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      noRunWhilePresent: true,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);        // визит засчитан, вытяжка молчит (§20.1)
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);         // t = 120 с: продувка после ухода (§20.3)
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);        // t = 420 с: продувка кончилась
+
+    time.advance('3180s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал от старта истёк, а вентиляции нет
+    time.advance('419s');
+    expect(isOn(fan)).toBe(false);        // t = 4019 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 4020 с = 420 + 3600
+  });
+});
+
+// ============================================================================
+
+describe('§21 Периодическая вентиляция — рубильник, пауза, пределы, влажность', () => {
+  it('автоматика запрещена — периодической вентиляции нет (§21.4)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const gate = addSwitch(hub, 2, false);   // рубильник в Off — автоматика запрещена (§11)
+    const options = airingOptions({ gateAutoSwitch: uuidOf(gate, HS.Switch) });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);        // пока автоматика запрещена — вентиляции нет
+  });
+
+  it('автоматика разрешена — те же шаги дают вентиляцию', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const gate = addSwitch(hub, 2, true);    // единственное отличие — рубильник в On
+    const options = airingOptions({ gateAutoSwitch: uuidOf(gate, HS.Switch) });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+  });
+
+  it('пауза после вентиляции соблюдается: следующая её ждёт (§21.4)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    // Пауза 7200 с длиннее интервала 3600 с — иначе её действие ненаблюдаемо.
+    // Контроль к этому утверждению — те же шаги при cooldownMinutes: 0 выше.
+    const options = airingOptions({ cooldownMinutes: 120 });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);        // t = 3900 с: авто-выключение запустило паузу
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);        // t = 7500 с: интервал истёк, но пауза ещё идёт
+  });
+
+  it('minRunMinutes больше airingMinutes продлевает вентиляцию (§21.4)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions({
+      airingMinutes: 5,                   // 300 с
+      minRunMinutes: 10,                  // 600 с — нижняя граница любого сеанса
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('300s');
+    expect(isOn(fan)).toBe(true);         // вентиляция вышла, минимальное время нет
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // ровно minRunMinutes от включения
+  });
+
+  it('maxRunMinutes обрывает вентиляцию (§21.4)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions({
+      airingMinutes: 60,                  // 3600 с
+      maxRunMinutes: 2,                   // 120 с — предел наступает раньше
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('119s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // ровно maxRunMinutes от включения
+  });
+
+  it('высокая влажность вентиляцию не продлевает (§21.8)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const humidity = addHumidity(hub, 2, 95);
+    const options = airingOptions({
+      humiditySensor: uuidOf(humidity, HS.HumiditySensor),
+      targetHumidity: 60,                 // 95 > 60 — условие §7 НЕ выполнено
+      humidityStartsFan: false,           // влажность сама вытяжку не включает
+    });
+    boot(scenario, fan, {}, options);
+    expect(isOn(fan)).toBe(false);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // только время вентиляции, влажность не при чём
+  });
+});
+
+// ============================================================================
+
+describe('§21 Периодическая вентиляция — присутствие во время неё и перезапуск', () => {
+  it('присутствие во время вентиляции гасит её сразу при включённом режиме §20 (§21.5)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      noRunWhilePresent: true,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);         // комната пустая — периодическая вентиляция
+
+    motionChar(motion).setValue(true);
+    expect(isOn(fan)).toBe(false);        // человек внутри — вытяжка молчит (§20.1)
+  });
+
+  it('пересохранение сценария обнуляет отсчёт (§21.6)', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const options = airingOptions();
+    boot(scenario, fan, {}, options);
+
+    time.advance('3000s');                // до интервала осталось 600 с
+    // Пересохранение: хаб исполняет скрипт заново со СВЕЖИМ variables (§14).
+    boot(scenario, fan, {}, options);
+
+    time.advance('600s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал от первого старта не считается
+    time.advance('2999s');
+    expect(isOn(fan)).toBe(false);        // t = 6599 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 6600 с = 3000 + 3600 от пересохранения
+  });
+});
+
+// ============================================================================
+
+describe('§21.10/§20.16 Окончание сеанса, когда выключить не дали', () => {
+  it('вентиляция: активность к её окончанию → сеанс уходит под обычный таймер выключения', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    // Накопление присутствия заведомо не наберётся — включение по присутствию картину не путает.
+    // maxRunMinutes 0: если сеанс так и остался вентиляцией, гасить его станет нечем,
+    // и вытяжка останется включённой навсегда — именно это утверждение и различает.
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 86400,
+      offDelaySeconds: 60,
+      maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(true);         // t = 3600 с: вентиляция
+
+    motionChar(motion).setValue(true);    // активность вернулась во время вентиляции
+    time.advance('300s');
+    expect(isOn(fan)).toBe(true);         // t = 3900 с: срок вышел, но выключить не дали
+
+    motionChar(motion).setValue(false);   // активность ушла — пошёл обычный отсчёт (§10)
+    time.advance('59s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // t = 3960 с = уход + offDelaySeconds
+  });
+
+  it('продувка: активность к её окончанию при подвешенном режиме → тот же общий путь', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const gate = addSwitch(hub, 3, true);
+    // Рубильник переводится в Off уже во время продувки: по §20.12 режим подвешен, поэтому
+    // вернувшееся присутствие вытяжку не гасит (§20.1 не действует) — единственная достижимая
+    // через шов помеха окончанию продувки.
+    const options = airingOptions({
+      noRunWhilePresent: true,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      gateAutoSwitch: uuidOf(gate, HS.Switch),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+      maxRunMinutes: 0,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');                  // визит засчитан
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);         // t = 120 с: продувка после ухода
+
+    time.advance('10s');
+    switchChar(gate).setValue(false);     // t = 130 с: автоматика запрещена, режим подвешен
+    time.advance('10s');
+    motionChar(motion).setValue(true);    // t = 140 с: человек вернулся, вытяжку не гасит
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('280s');
+    expect(isOn(fan)).toBe(true);         // t = 420 с: срок продувки вышел, выключить не дали
+
+    motionChar(motion).setValue(false);   // активность ушла — обычный отсчёт (§10)
+    time.advance('59s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // t = 480 с = уход + offDelaySeconds
+  });
+});
+
+// ============================================================================
+
+describe('§21.9 Пропуск по активности — следующая попытка через полный интервал', () => {
+  it('активность в момент истечения: вентиляции нет ни тогда, ни сразу после ухода', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 86400,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3000s');
+    motionChar(motion).setValue(true);
+    time.advance('600s');
+    expect(isOn(fan)).toBe(false);        // t = 3600 с: интервал истёк при активности — пропуск
+
+    time.advance('400s');
+    motionChar(motion).setValue(false);   // t = 4000 с: человек ушёл
+    time.advance('200s');
+    expect(isOn(fan)).toBe(false);        // t = 4200 с: вентиляция в очереди не стояла
+  });
+
+  it('следующая попытка — ровно через полный интервал от момента пропуска', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    const options = airingOptions({
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 86400,
+      offDelaySeconds: 60,
+    });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3000s');
+    motionChar(motion).setValue(true);
+    time.advance('600s');                 // t = 3600 с: пропуск по активности
+    time.advance('400s');
+    motionChar(motion).setValue(false);   // t = 4000 с: человек ушёл
+
+    time.advance('3199s');
+    expect(isOn(fan)).toBe(false);        // t = 7199 с
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 7200 с = 3600 + 3600 — от пропуска, не от ухода
+
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);        // и длится обычные airingMinutes
+  });
+});
+
+// ============================================================================
+
+describe('§21.11 Просьба о вентиляции живёт до ближайшей попытки авто-включения', () => {
+  it('рубильник разрешил автоматику — отложенная вентиляция случается тогда же', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const gate = addSwitch(hub, 2, false);   // автоматика запрещена (§11)
+    const options = airingOptions({ gateAutoSwitch: uuidOf(gate, HS.Switch) });
+    boot(scenario, fan, {}, options);
+
+    time.advance('3600s');
+    expect(isOn(fan)).toBe(false);        // интервал истёк, но включать нельзя
+    time.advance('1400s');
+    expect(isOn(fan)).toBe(false);        // t = 5000 с: ждёт разрешения, а не следующего интервала
+
+    switchChar(gate).setValue(true);      // t = 5000 с: автоматика разрешена
+    expect(isOn(fan)).toBe(true);         // просьба дожила до ближайшей попытки
+  });
+
+  it('отложенная вентиляция длится обычные airingMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const gate = addSwitch(hub, 2, false);
+    const options = airingOptions({ gateAutoSwitch: uuidOf(gate, HS.Switch) });
+    boot(scenario, fan, {}, options);
+
+    time.advance('5000s');
+    switchChar(gate).setValue(true);
+    expect(isOn(fan)).toBe(true);
+
+    time.advance('299s');
+    expect(isOn(fan)).toBe(true);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(false);        // ровно 300 с от разрешения
+  });
+});
+
+// ============================================================================
+
+describe('§21.10a2 Принудительное выключение при присутствии паузу не заводит', () => {
+  it('вошёл во время продувки — выключилась, вышел — проветривание проходит, паузу не ждёт', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    // Пауза 600 с заведомо длиннее всей дорожки: если бы принудительное выключение
+    // её заводило, продувка за второй визит попала бы под запрет. Контроль к утверждению —
+    // «окончание продувки запускает паузу» (§20.11) на той же cooldownMinutes: 10.
+    const options = airingOptions({
+      noRunWhilePresent: true,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+      cooldownMinutes: 10,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');                  // визит засчитан
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);         // t = 120 с: продувка за первый визит
+
+    time.advance('80s');
+    motionChar(motion).setValue(true);    // t = 200 с: человек вернулся
+    expect(isOn(fan)).toBe(false);        // принудительное выключение (§20.4)
+
+    time.advance('60s');                  // t = 260 с: второй визит засчитан
+    motionChar(motion).setValue(false);
+    time.advance('59s');
+    expect(isOn(fan)).toBe(false);
+    time.advance('1s');
+    expect(isOn(fan)).toBe(true);         // t = 320 с: продувка прошла, паузы нет
+  });
+
+  it('обычное окончание продувки паузу заводит — та же cooldownMinutes', ({ hub, scenario, time }) => {
+    const fan = addFan(hub);
+    const motion = addMotion(hub, 2, false);
+    // Контрольная половина пары: отличие от теста выше только в том, ЧЕМ закончился
+    // первый сеанс — своим сроком, а не приходом человека.
+    const options = airingOptions({
+      noRunWhilePresent: true,
+      motion1: uuidOf(motion, HS.MotionSensor),
+      onDelaySeconds: 60,
+      offDelaySeconds: 60,
+      cooldownMinutes: 10,
+    });
+    boot(scenario, fan, {}, options);
+
+    motionChar(motion).setValue(true);
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(true);         // t = 120 с: продувка за первый визит
+    time.advance('300s');
+    expect(isOn(fan)).toBe(false);        // t = 420 с: кончилась своим сроком — пауза пошла
+
+    motionChar(motion).setValue(true);    // второй визит
+    time.advance('60s');
+    motionChar(motion).setValue(false);
+    time.advance('60s');
+    expect(isOn(fan)).toBe(false);        // t = 540 с: 120 с из 600 — продувку держит пауза
   });
 });

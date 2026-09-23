@@ -39,7 +39,7 @@
 | `decide` | решением вкл/выкл | `tryAutoTurnOn(...)`, `tryAutoTurnOff(...)` | порядок проверок, паузу, минимальное время, блокировки |
 | `timers` | таймерами | `armOffTimer`, `clearOffTimer`, `armMaxRunTimer`, `clearMaxRunTimer`, `armCooldown` | идентификаторы в `variables` |
 | `manual` | ручными входами и «рубильником» | `isAutomationAllowed(options)`, `handleManualControlEvent(...)` | типы входов и антидребезг |
-| `notify` | уведомлением по таймауту | `sendDryTimeoutNotification(options, src)` | разбор каналов/клиентов |
+| `notify` | записью о недосушке в журнал | `logDryTimeoutMessage(options, src, humidity, target)` | формирование текста и состав фактов |
 | `log` | отладкой | `logInfo`, `logError` | префикс и ленивые сообщения |
 
 **Шов для тестов ровно один** — DSL ScenarioSimulator: `scenario.info()` и

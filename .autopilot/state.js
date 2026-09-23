@@ -10,8 +10,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "/Users/asihminkirill/.agents/skills/autopilot",
   "startedAt": "2026-09-21T03:47:01+03:00",
-  "updatedAt": "2026-09-23T02:22:32+03:00",
-  "finishedAt": "2026-09-23T02:22:32+03:00",
+  "updatedAt": "2026-09-23T15:57:28+03:00",
+  "finishedAt": "2026-09-23T15:57:28+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -49,22 +49,22 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-09-21T04:01:30+03:00",
-      "note": "10 из 10 тасков готовы",
-      "finishedAt": "2026-09-23T02:22:32+03:00"
+      "note": "12 из 12 тасков готовы",
+      "finishedAt": "2026-09-23T15:57:28+03:00"
     },
     {
       "id": "review",
       "status": "done",
       "startedAt": "2026-09-21T04:15:04+03:00",
-      "note": "проверено 10 из 10",
-      "finishedAt": "2026-09-23T02:22:32+03:00"
+      "note": "проверено 12 из 12",
+      "finishedAt": "2026-09-23T15:57:28+03:00"
     },
     {
       "id": "final",
       "status": "done",
       "note": "слепая приёмка: 7 из 8, одно частично",
-      "startedAt": "2026-09-23T02:22:32+03:00",
-      "finishedAt": "2026-09-23T02:22:32+03:00"
+      "startedAt": "2026-09-23T15:57:28+03:00",
+      "finishedAt": "2026-09-23T15:57:28+03:00"
     }
   ],
   "requirements": {
@@ -323,11 +323,76 @@ window.STATE =
       "repairFindings": [
         "плоская ветка проверялась не тем же набором фактов; toBeGreaterThanOrEqual пропустил бы дублирующую отправку; место устройства не проверялось"
       ]
+    },
+    {
+      "id": "11",
+      "title": "Уведомление через log.message, Notify снять",
+      "requirements": [
+        "G03",
+        "R19"
+      ],
+      "blockedBy": [],
+      "wave": 8,
+      "zone": [
+        "ExhaustFanAutomation/source/",
+        "ExhaustFanAutomation/README.md"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T14:00:54+03:00",
+      "retries": 0,
+      "repairs": 1,
+      "handoffs": 0,
+      "finishedAt": "2026-09-23T15:57:28+03:00",
+      "commit": "b0fe30c",
+      "tests": {
+        "passed": 3986,
+        "failed": 0
+      },
+      "files": [
+        "ExhaustFanAutomation/source/ExhaustFanAutomation.js",
+        "ExhaustFanAutomation/README.md",
+        "ExhaustFanAutomation/ExhaustFanAutomation.json"
+      ],
+      "repairFindings": [
+        "две абстракции остались с одним вызывающим после снятия ветки; имя sendDryTimeoutNotification обещало доставку, которой больше нет"
+      ]
+    },
+    {
+      "id": "12",
+      "title": "Тесты и пресет под log.message",
+      "requirements": [
+        "R22i",
+        "G03"
+      ],
+      "blockedBy": [],
+      "wave": 8,
+      "zone": [
+        "ExhaustFanAutomation/.tests/"
+      ],
+      "status": "done",
+      "startedAt": "2026-09-23T14:00:54+03:00",
+      "retries": 0,
+      "repairs": 1,
+      "handoffs": 0,
+      "finishedAt": "2026-09-23T15:57:28+03:00",
+      "commit": "b0fe30c",
+      "tests": {
+        "passed": 3986,
+        "failed": 0
+      },
+      "files": [
+        "ExhaustFanAutomation/.tests/blackbox-logic.test.js",
+        "ExhaustFanAutomation/.tests/SPEC.md",
+        "ExhaustFanAutomation/.tests/preset.json"
+      ],
+      "repairFindings": [
+        "отбор записи шёл по слову, хотя спецификация формулировки не фиксирует — переведён на уровень message"
+      ]
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 3989,
+    "passed": 3986,
     "failed": 0
   },
   "debt": {
@@ -339,7 +404,7 @@ window.STATE =
     "A01 — опция «Возможность ручного управления», по образцу DayNight",
     "A02 — опция «Менять имя сервиса», по образцу DayNight",
     "A03 — опция «Инвертировать», по образцу DayNight",
-    "Уведомление: тихий режим и оформление под Telegram — по образцу Battery, ради G03"
+    "Уведомление о недосушке через log.message — запись в журнал хаба, ради G03"
   ],
   "coverage": {
     "findings": 7,

@@ -18,8 +18,10 @@ const STALENESS_THRESHOLD_1HOUR_MS = 60 * 60 * 1000;  // 60-минутный р�
 const SUPPORTED_THERMOSTATS = {
     AQARA_E1: { modelId: "lumi.airrtc.agl001", manufacturer: "Aqara", name: "Aqara E1", hasSwitch: true },
     SONOFF_TRVZB: { modelId: "TRVZB", manufacturer: "SONOFF", name: "SONOFF TRVZB", hasSwitch: true },
+    SONOFF_TRVZBT: { modelId: "TRV-ZBT", manufacturer: "SONOFF", name: "SONOFF TRV-ZBT", hasSwitch: true },
     DANFOSS: { modelId: "eTRV0101", manufacturer: "Danfoss", name: "Danfoss eTRV0101", hasSwitch: true },
-    SMARTKOT: { modelId: "Opentherm", manufacturer: "SmartKot", name: "SmartKot Opentherm", hasSwitch: false }
+    SMARTKOT: { modelId: "Opentherm", manufacturer: "SmartKot", name: "SmartKot Opentherm", hasSwitch: false },
+    SMARTKOT: { modelId: "SBDV-00205", manufacturer: "SDevices", name: "Sber Devices SBDV-00205", hasSwitch: false }
 };
 
 // Получает список названий поддерживаемых термостатов
@@ -29,8 +31,8 @@ function getSupportedThermostatsList() {
 
 // Выносим название и описание в переменные для использования в info и options
 let scenarioName = {
-    ru: "Внешний датчик температуры для термоголовок " + getSupportedThermostatsList(),
-    en: "External temperature sensor for thermostats " + getSupportedThermostatsList()
+    ru: "Внешний датчик температуры для термоголовок",
+    en: "External temperature sensor for thermostats"
 };
 
 let scenarioDescription = {
@@ -41,7 +43,7 @@ let scenarioDescription = {
 info = {
     name: scenarioName.ru,
     description: scenarioDescription.ru,
-    version: "2.4",
+    version: "2.5",
     author: "@BOOMikru",
     onStart: true,
 

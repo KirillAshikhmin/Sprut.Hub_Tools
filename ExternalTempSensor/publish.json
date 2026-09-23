@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "source": "source/ExternalTempSensor.js",
+      "type": "LOGIC",
+      "json": "ExternalTempSensor.json",
+      "primary": true
+    }
+  ]
+}

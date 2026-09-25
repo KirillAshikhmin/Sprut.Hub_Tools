@@ -751,13 +751,14 @@ describe('README §"Антидребезг кнопки/импульса"', () =
 
 // ---------------------------------------------------------------------------
 // README §"Ручные входы" — Датчик открытия (контакт)
-// "Датчик открытия (контакт): ведёт себя как кнопка — реагирует только на
-//  Открытие (переход в состояние «Открыто»), каждое открытие переключает свет
-//  (toggle). Закрытие игнорируется, удержания нет."
+// "Датчик открытия (контакт): работает только на включение — реагирует только на
+//  Открытие (переход в состояние «Открыто»): если свет выключен, включает его;
+//  если свет уже горит, не гасит, а перезапускает таймер выключения. Закрытие
+//  игнорируется, удержания нет."
 // ---------------------------------------------------------------------------
 
 describe('README §"Ручные входы" — Датчик открытия (контакт)', () => {
-  it('ContactSensor: Открытие (1) при выключенном свете → включает (toggle)', ({ hub, scenario }) => {
+  it('ContactSensor: Открытие (1) при выключенном свете → включает', ({ hub, scenario }) => {
     const lamp = makeLamp(hub, 10);
     const contact = makeContact(hub, 30);
     const lampOn = lamp.char(HS.Lightbulb, HC.On);
@@ -785,7 +786,7 @@ describe('README §"Ручные входы" — Датчик открытия (
     expect(lampOn.getValue()).toBe(true);
   });
 
-  it('ContactSensor: повторное Открытие → выключает (toggle)', ({ hub, scenario }) => {
+  it('ContactSensor: повторное Открытие при горящем свете → свет остаётся включённым (контакт не выключает)', ({ hub, scenario }) => {
     const lamp = makeLamp(hub, 10);
     const contact = makeContact(hub, 30);
     const lampOn = lamp.char(HS.Lightbulb, HC.On);
@@ -797,11 +798,32 @@ describe('README §"Ручные входы" — Датчик открытия (
     expect(lampOn.getValue()).toBe(true);
 
     contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(0);  // Закрытие → игнор
-    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // 2-е Открытие → выкл
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // 2-е Открытие → свет остаётся ВКЛ
+    expect(lampOn.getValue()).toBe(true);
+  });
+
+  it('ContactSensor: повторное Открытие при горящем свете перезапускает таймер выключения', ({ hub, scenario, time }) => {
+    const lamp = makeLamp(hub, 10);
+    const contact = makeContact(hub, 30);
+    const lampOn = lamp.char(HS.Lightbulb, HC.On);
+    const vars = freshVars();
+    const options = baseOptions({ manualControl1: contact.getService(HS.ContactSensor).getUUID(), offDelaySeconds: 30 });
+
+    scenario.run({ source: lampOn, value: false, variables: vars, options });
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // вошёл → вкл, отсчёт 30с
+    expect(lampOn.getValue()).toBe(true);
+
+    time.advance('20s');
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(0);  // Закрытие → игнор
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // снова вошёл → отсчёт заново
+    time.advance('20s');                                                // 40с от первого, 20с от последнего Открытия
+    expect(lampOn.getValue()).toBe(true);                              // старый таймер не погасил
+
+    time.advance('11s');                                                // 31с от последнего Открытия
     expect(lampOn.getValue()).toBe(false);
   });
 
-  it('ContactSensor: Открытие в окне 5с после авто-включения по датчику — игнорируется', ({ hub, scenario, time }) => {
+  it('ContactSensor: Открытие в окне 5с после авто-включения по датчику — игнорируется (свет уже погас, окно ещё действует)', ({ hub, scenario, time }) => {
     const lamp = makeLamp(hub, 10);
     const motion = makeMotion(hub, 20);
     const contact = makeContact(hub, 30);
@@ -811,16 +833,19 @@ describe('README §"Ручные входы" — Датчик открытия (
       motion1: motion.getService(HS.MotionSensor).getUUID(),
       manualControl1: contact.getService(HS.ContactSensor).getUUID(),
       ignoreManualWithin5sAfterSensorOn: true,
+      offDelaySeconds: 1,
     });
 
     scenario.run({ source: lampOn, value: false, variables: vars, options });
-    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);   // авто-вкл, окно 5с открыто
     expect(lampOn.getValue()).toBe(true);
     scenario.run({ source: lampOn, value: true, variables: vars, options });
+    motion.char(HS.MotionSensor, HC.MotionDetected).setValue(false);  // активность пропала
 
-    time.advance('2s');
-    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);  // Открытие в окне
-    expect(lampOn.getValue()).toBe(true);  // контакт не выключил
+    time.advance('2s');                                                // свет погас по offDelaySeconds=1с
+    expect(lampOn.getValue()).toBe(false);
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1); // Открытие в окне
+    expect(lampOn.getValue()).toBe(false);                             // контакт проигнорирован — не включил
   });
 });
 

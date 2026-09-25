@@ -21,7 +21,7 @@ const scenarioDescription = {
 info = {
     name: scenarioName.ru,
     description: scenarioDescription.ru,
-    version: "1.1",
+    version: "1.2",
     author: "@BOOMikru",
     onStart: true,
 
@@ -226,8 +226,8 @@ function handleManualControlEvent(src, uuid, val, st, ct, variables, options) {
         return true;
     }
     if (st === HS.ContactSensor && ct === HC.ContactSensorState && val === 1) {
-        logInfo("Ручной контакт «Открытие» — переключаю лампу", src, options.debug);
-        manualToggleFromButtonOrPulse(variables, options, src);
+        logInfo("Ручной контакт «Открытие» — включаю лампу, если она выключена", src, options.debug);
+        manualTurnOnFromContact(variables, options, src);
         return true;
     }
     if (st === HS.StatelessProgrammableSwitch && ct === HC.ProgrammableSwitchEvent && val === 0) {
@@ -310,7 +310,7 @@ function shouldSuppressManualButtonOrPulseAfterSensorAuto(variables, options) {
 
 function manualToggleFromButtonOrPulse(variables, options, logSource) {
     if (shouldSuppressManualButtonOrPulseAfterSensorAuto(variables, options)) {
-        logInfo("Кнопка/импульс/контакт проигнорированы (антидребезг: " + DEBOUNCE_MANUAL_AFTER_SENSOR_MS + " мс после включения по датчику)", logSource, options.debug);
+        logInfo("Кнопка/импульс проигнорированы (антидребезг: " + DEBOUNCE_MANUAL_AFTER_SENSOR_MS + " мс после включения по датчику)", logSource, options.debug);
         return;
     }
     if (!isLightCurrentlyOn(variables)) {
@@ -320,6 +320,23 @@ function manualToggleFromButtonOrPulse(variables, options, logSource) {
     }
     logInfo("Переключение вручную: лампа была включена — выключаю", logSource, options.debug);
     manualTurnOffFromButtonOrPulse(variables, options, logSource);
+}
+
+// Контакт как ручной вход работает только на включение: «Открытие» включает
+// выключенную лампу, а горящую не гасит, а лишь перезапускает таймер выключения
+// (в отличие от кнопки/импульса — без toggle).
+function manualTurnOnFromContact(variables, options, logSource) {
+    if (shouldSuppressManualButtonOrPulseAfterSensorAuto(variables, options)) {
+        logInfo("Контакт проигнорирован (антидребезг: " + DEBOUNCE_MANUAL_AFTER_SENSOR_MS + " мс после включения по датчику)", logSource, options.debug);
+        return;
+    }
+    if (isLightCurrentlyOn(variables)) {
+        logInfo("Ручной контакт: лампа уже включена — перезапускаю таймер выключения", logSource, options.debug);
+        restartOffTimers(variables, options, logSource);
+        return;
+    }
+    logInfo("Ручной контакт: лампа была выключена — включаю", logSource, options.debug);
+    manualTurnOn(variables, options, logSource, false);
 }
 
 function manualTurnOffFromButtonOrPulse(variables, options, logSource) {
@@ -340,7 +357,6 @@ function manualTurnOn(variables, options, logSource, fromManualSwitch) {
     clearManualHoldSafetyTimer(variables, options, logSource);
     variables.lastSensorAutoOnAt = undefined;
     releaseManualOffLock(variables, options, logSource);
-    const switchHold = isAnyManualSwitchOn(options);
     if (fromManualSwitch === true) {
         variables.manualHold = false;
         logInfo("Свет следует за ручным выключателем — таймеры выключения не действуют, пока он в On", logSource, options.debug);
@@ -351,16 +367,23 @@ function manualTurnOn(variables, options, logSource, fromManualSwitch) {
         variables.manualHold = false;
     }
     setLightOn(variables.cachedLightService, true, options, logSource);
-    if (switchHold) {
+    restartOffTimers(variables, options, logSource);
+}
+
+// Перепланирует таймер выключения с нуля по текущему состоянию: при активности датчиков
+// или ручном выключателе в On таймер не нужен, в режиме удержания идёт защитный таймер,
+// иначе — обычный таймер offDelaySeconds.
+function restartOffTimers(variables, options, logSource) {
+    clearOffTimer(variables, options, logSource);
+    clearManualHoldSafetyTimer(variables, options, logSource);
+    if (isAnyManualSwitchOn(options) || computeOccupancyActive(options)) {
         return;
     }
-    const occ = computeOccupancyActive(options);
-    if (!occ && variables.manualHold) {
+    if (variables.manualHold) {
         scheduleManualHoldSafetyTimer(variables, options, logSource);
+        return;
     }
-    if (!occ && !variables.manualHold) {
-        scheduleOffTimer(variables, options, logSource);
-    }
+    scheduleOffTimer(variables, options, logSource);
 }
 
 function applyOccupancyState(variables, options, logSource) {
@@ -893,8 +916,8 @@ function createOptions() {
         };
         if (hi === 1) {
             manualOpt.desc = {
-                ru: "Устройство для ручного управления светом. Выключатель: лампа повторяет его состояние; пока выключатель в On, авто-выключение по таймауту и защитный таймер не действуют — свет следует за выключателем. Кнопка, импульсы и датчик открытия (контакт) переключают привязанный свет; контакт реагирует только на «Открытие», «Закрытие» игнорируется.\nВнимание: не указывайте тут выключатель, на который активируется логика!",
-                en: "Device for manual light control. Switch: the bound lamp follows its state; while the switch is On, auto-off and safety timer are disabled — the light follows the switch. Button, pulse and contact sensor toggle the bound output; the contact reacts only on Open, Close is ignored.\nAttention: do not specify the switch that activates the logic here!"
+                ru: "Устройство для ручного управления светом. Выключатель: лампа повторяет его состояние; пока выключатель в On, авто-выключение по таймауту и защитный таймер не действуют — свет следует за выключателем. Кнопка и импульсы переключают привязанный свет; датчик открытия (контакт) работает только на включение: «Открытие» включает выключенный свет, горящий не гасит, «Закрытие» игнорируется.\nВнимание: не указывайте тут выключатель, на который активируется логика!",
+                en: "Device for manual light control. Switch: the bound lamp follows its state; while the switch is On, auto-off and safety timer are disabled — the light follows the switch. Button and pulse toggle the bound output; the contact sensor only turns it on: Open turns the light on if it is off and never turns it off, Close is ignored.\nAttention: do not specify the switch that activates the logic here!"
             };
         }
         options["manualControl" + hi] = manualOpt;
@@ -1000,8 +1023,8 @@ function createOptions() {
             en: "Do not auto-on after manual off"
         },
         desc: {
-            ru: "Если включено и свет выключили вручную (кнопкой, импульсом, датчиком открытия, сценой, голосом или физическим выключателем, привязанным к лампе), пока датчики ещё активны — автоматическое включение по датчикам не выполняется до момента, когда свет погас бы сам: все датчики (движение и присутствие) неактивны и прошёл таймаут «Задержка выключения». Это позволяет принудительно погасить свет, не борясь с автоматикой. Не относится к ручному входу типа «Выключатель» — для него «выключено» это рабочее состояние автоматики.",
-            en: "If enabled and the light is turned off manually (button, pulse, contact sensor, scene, voice, or a physical switch wired to the lamp) while sensors are still active, auto-on by sensors is suppressed until the moment the light would have switched off by itself: all sensors (motion and occupancy) inactive and the «Off delay» timeout elapsed. This lets you force the light off without fighting the automation. Does not apply to the stateful manual switch input."
+            ru: "Если включено и свет выключили вручную (кнопкой, импульсом, сценой, голосом или физическим выключателем, привязанным к лампе), пока датчики ещё активны — автоматическое включение по датчикам не выполняется до момента, когда свет погас бы сам: все датчики (движение и присутствие) неактивны и прошёл таймаут «Задержка выключения». Это позволяет принудительно погасить свет, не борясь с автоматикой. Не относится к ручному входу типа «Выключатель» — для него «выключено» это рабочее состояние автоматики.",
+            en: "If enabled and the light is turned off manually (button, pulse, scene, voice, or a physical switch wired to the lamp) while sensors are still active, auto-on by sensors is suppressed until the moment the light would have switched off by itself: all sensors (motion and occupancy) inactive and the «Off delay» timeout elapsed. This lets you force the light off without fighting the automation. Does not apply to the stateful manual switch input."
         },
         type: "Boolean",
         value: false

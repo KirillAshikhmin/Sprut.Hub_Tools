@@ -127,9 +127,9 @@ describe('Метаданные сценария (info-контракт, §1/§3.
     expect(scenario.info().onStart).toBe(true);
   });
 
-  it('version === "1.1" и author === "@BOOMikru"', ({ scenario }) => {
+  it('version === "1.2" и author === "@BOOMikru"', ({ scenario }) => {
     const info = scenario.info();
-    expect(info.version).toBe('1.1');
+    expect(info.version).toBe('1.2');
     expect(info.author).toBe('@BOOMikru');
   });
 
@@ -822,7 +822,7 @@ describe('§4.2 manualControl — поведение по типу устрой�
     expect(lampChar.getValue()).toBe(true);
   });
 
-  it('ContactSensor как ручной вход: Открытие переключает, Закрытие игнорируется, повторное Открытие снова переключает', ({ hub, scenario }) => {
+  it('ContactSensor как ручной вход: Открытие включает, Закрытие игнорируется, повторное Открытие при горящем свете НЕ выключает', ({ hub, scenario }) => {
     const lamp = addLamp(hub);
     const contact = addContact(hub, 2, 0);
     const lampChar = lamp.char(HS.Lightbulb, HC.On);
@@ -834,8 +834,105 @@ describe('§4.2 manualControl — поведение по типу устрой�
     expect(lampChar.getValue()).toBe(true);
     contactChar.setValue(0); // Закрытие — игнорируется
     expect(lampChar.getValue()).toBe(true);
-    contactChar.setValue(1); // повторное Открытие — toggle
+    contactChar.setValue(1); // повторное Открытие — контакт работает только на включение
+    expect(lampChar.getValue()).toBe(true);
+  });
+
+  it('ContactSensor как ручной вход: повторное Открытие при горящем свете перезапускает таймер offDelaySeconds', ({ hub, scenario, time }) => {
+    const lamp = addLamp(hub);
+    const contact = addContact(hub, 2, 0);
+    const lampChar = lamp.char(HS.Lightbulb, HC.On);
+    const options = baseOptions({ manualControl1: contact.getService(HS.ContactSensor).getUUID(), offDelaySeconds: 30 });
+    const vars = {};
+    boot(scenario, lampChar, vars, options);
+    const contactChar = contact.char(HS.ContactSensor, HC.ContactSensorState);
+    contactChar.setValue(1); // вошёл — свет включён, отсчёт 30с
+    expect(lampChar.getValue()).toBe(true);
+
+    time.advance('20s');
+    contactChar.setValue(0);
+    contactChar.setValue(1); // снова вошёл на 20-й секунде — отсчёт начинается заново
+    time.advance('20s'); // 40с от первого Открытия, 20с от последнего
+    expect(lampChar.getValue()).toBe(true); // старый таймер не сработал
+
+    time.advance('11s'); // 31с от последнего Открытия
     expect(lampChar.getValue()).toBe(false);
+  });
+
+  it('ContactSensor как ручной вход: в режиме удержания повторное Открытие перезапускает защитный таймер', ({ hub, scenario, time }) => {
+    const lamp = addLamp(hub);
+    const contact = addContact(hub, 2, 0);
+    const lampChar = lamp.char(HS.Lightbulb, HC.On);
+    const options = baseOptions({
+      manualControl1: contact.getService(HS.ContactSensor).getUUID(),
+      noAutoOffWhenManualOn: true,
+      manualHoldSafetyOffDelayMinutes: 1,
+    });
+    const vars = {};
+    boot(scenario, lampChar, vars, options);
+    const contactChar = contact.char(HS.ContactSensor, HC.ContactSensorState);
+    contactChar.setValue(1); // включено контактом — удержание, защитный таймер 60с
+    expect(lampChar.getValue()).toBe(true);
+
+    time.advance('40s');
+    contactChar.setValue(0);
+    contactChar.setValue(1); // повторное Открытие — защитный таймер заново
+    time.advance('40s'); // 80с от первого Открытия, 40с от последнего
+    expect(lampChar.getValue()).toBe(true);
+
+    time.advance('21s'); // 61с от последнего Открытия
+    expect(lampChar.getValue()).toBe(false);
+  });
+
+  it('ContactSensor как ручной вход: Открытие при горящем свете и активности датчиков таймер не запускает', ({ hub, scenario, time }) => {
+    const lamp = addLamp(hub);
+    const motion = addMotion(hub, 2, false);
+    const contact = addContact(hub, 3, 0);
+    const lampChar = lamp.char(HS.Lightbulb, HC.On);
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      manualControl1: contact.getService(HS.ContactSensor).getUUID(),
+      ignoreManualWithin5sAfterSensorOn: false,
+      offDelaySeconds: 30,
+    });
+    const vars = {};
+    boot(scenario, lampChar, vars, options);
+    const motionChar = motion.char(HS.MotionSensor, HC.MotionDetected);
+    motionChar.setValue(true); // авто-вкл, активность есть
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1); // Открытие при активности — таймер не нужен
+    time.advance('40s');
+    expect(lampChar.getValue()).toBe(true); // никакой таймер по контакту не стартовал
+
+    motionChar.setValue(false); // активность пропала — отсчёт 30с только отсюда
+    time.advance('29s');
+    expect(lampChar.getValue()).toBe(true);
+    time.advance('2s');
+    expect(lampChar.getValue()).toBe(false);
+  });
+
+  it('ContactSensor как ручной вход: Открытие при горящем свете не активирует удержание (noAutoOffWhenManualOn=true, свет включён датчиком)', ({ hub, scenario, time }) => {
+    const lamp = addLamp(hub);
+    const motion = addMotion(hub, 2, false);
+    const contact = addContact(hub, 3, 0);
+    const lampChar = lamp.char(HS.Lightbulb, HC.On);
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      manualControl1: contact.getService(HS.ContactSensor).getUUID(),
+      ignoreManualWithin5sAfterSensorOn: false,
+      noAutoOffWhenManualOn: true,
+      offDelaySeconds: 30,
+    });
+    const vars = {};
+    boot(scenario, lampChar, vars, options);
+    const motionChar = motion.char(HS.MotionSensor, HC.MotionDetected);
+    motionChar.setValue(true); // авто-вкл по датчику — удержания нет
+    motionChar.setValue(false); // активность пропала — обычный таймер 30с
+    time.advance('10s');
+    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1); // Открытие — перезапуск обычного таймера, а не переход в удержание
+    time.advance('29s');
+    expect(lampChar.getValue()).toBe(true);
+    time.advance('2s');
+    expect(lampChar.getValue()).toBe(false); // погас по offDelaySeconds, а не держится защитным таймером 240 мин
   });
 
   it('можно комбинировать разные типы ручных входов одновременно (Switch в manualControl1, кнопка в manualControl2)', ({ hub, scenario }) => {
@@ -1261,26 +1358,49 @@ describe('§11 Антидребезг кнопки/импульса/контак
     expect(lampChar.getValue()).toBe(true); // проигнорировано, toggle не произошёл
   });
 
-  it('импульс и контакт-ручной-вход тоже игнорируются в течение окна', ({ hub, scenario, time }) => {
+  it('импульс тоже игнорируется в течение окна', ({ hub, scenario }) => {
     const lamp = addLamp(hub);
     const motion = addMotion(hub, 2, false);
     const pulse = addPulse(hub, 3, 0);
-    const contact = addContact(hub, 4, 0);
     const lampChar = lamp.char(HS.Lightbulb, HC.On);
     const options = baseOptions({
       motion1: motion.getService(HS.MotionSensor).getUUID(),
       manualControl1: pulse.getService(HS.C_PulseMeter).getUUID(),
-      manualControl2: contact.getService(HS.ContactSensor).getUUID(),
     });
     const vars = {};
     boot(scenario, lampChar, vars, options);
     motion.char(HS.MotionSensor, HC.MotionDetected).setValue(true);
     pulse.char(HS.C_PulseMeter, HC.C_PulseCount).setValue(1);
     expect(lampChar.getValue()).toBe(true); // импульс проигнорирован
+  });
 
-    time.advance('1s');
-    contact.char(HS.ContactSensor, HC.ContactSensorState).setValue(1);
-    expect(lampChar.getValue()).toBe(true); // контакт тоже проигнорирован (всё ещё в окне)
+  it('контакт-ручной-вход тоже игнорируется в течение окна (свет уже погас — попытка включить проигнорирована)', ({ hub, scenario, time }) => {
+    const lamp = addLamp(hub);
+    const motion = addMotion(hub, 2, false);
+    const contact = addContact(hub, 3, 0);
+    const lampChar = lamp.char(HS.Lightbulb, HC.On);
+    const options = baseOptions({
+      motion1: motion.getService(HS.MotionSensor).getUUID(),
+      manualControl1: contact.getService(HS.ContactSensor).getUUID(),
+      offDelaySeconds: 1,
+    });
+    const vars = {};
+    boot(scenario, lampChar, vars, options);
+    const motionChar = motion.char(HS.MotionSensor, HC.MotionDetected);
+    motionChar.setValue(true); // авто-вкл, окно открыто на 5с
+    motionChar.setValue(false); // датчик сразу теряет активность
+
+    time.advance('2s'); // offDelaySeconds=1с истёк — свет уже погас, окно ещё действует
+    expect(lampChar.getValue()).toBe(false);
+
+    const contactChar = contact.char(HS.ContactSensor, HC.ContactSensorState);
+    contactChar.setValue(1);
+    expect(lampChar.getValue()).toBe(false); // контакт проигнорирован — свет не включён
+
+    time.advance('4s'); // окно истекло (6с с момента авто-включения)
+    contactChar.setValue(0);
+    contactChar.setValue(1);
+    expect(lampChar.getValue()).toBe(true); // после окна контакт включает штатно
   });
 
   it('ручной Switch продолжает работать без ограничений в течение окна антидребезга', ({ hub, scenario }) => {
@@ -1609,20 +1729,25 @@ describe('§12 Приоритеты правил при конфликтах', (
     expect(lampChar.getValue()).toBe(false);
   });
 
-  it('контакт одновременно в motion1 и manualControl1 — обрабатывается как ручной вход (toggle на каждое Открытие)', ({ hub, scenario }) => {
+  it('контакт одновременно в motion1 и manualControl1 — Открытие обрабатывается как ручной вход (включает даже при запрещающем gateAutoSwitch), повторное Открытие не выключает', ({ hub, scenario }) => {
     const lamp = addLamp(hub);
     const contact = addContact(hub, 2, 0);
+    const gate = addSwitch(hub, 3, false); // автоматика запрещена — ветка датчика активности включить не смогла бы
     const lampChar = lamp.char(HS.Lightbulb, HC.On);
     const uuid = contact.getService(HS.ContactSensor).getUUID();
-    const options = baseOptions({ motion1: uuid, manualControl1: uuid, ignoreManualWithin5sAfterSensorOn: false });
+    const options = baseOptions({
+      motion1: uuid, manualControl1: uuid,
+      gateAutoSwitch: gate.getService(HS.Switch).getUUID(),
+      ignoreManualWithin5sAfterSensorOn: false,
+    });
     const vars = {};
     boot(scenario, lampChar, vars, options);
     const contactChar = contact.char(HS.ContactSensor, HC.ContactSensorState);
     contactChar.setValue(1);
-    expect(lampChar.getValue()).toBe(true);
+    expect(lampChar.getValue()).toBe(true); // включила ветка «ручной вход», а не авто-включение
     contactChar.setValue(0);
-    contactChar.setValue(1); // повторное Открытие — toggle, а не "остаётся активным"
-    expect(lampChar.getValue()).toBe(false);
+    contactChar.setValue(1); // повторное Открытие — контакт только включает
+    expect(lampChar.getValue()).toBe(true);
   });
 
   it('подавленное антидребезгом нажатие кнопки не переключает свет и не влияет на блокировку/удержание', ({ hub, scenario }) => {

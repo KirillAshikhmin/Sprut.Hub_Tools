@@ -25,5 +25,8 @@
   "engines": {
     "bun": ">=1.1.0",
     "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "hono": "4.13.5"
   }
 }

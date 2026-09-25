@@ -8,8 +8,10 @@
 ## Поддерживаемые устройства
 - **Aqara E1 (SRTS-A01)** - ID: lumi.airrtc.agl001
 - **SONOFF TRVZB**
+- **SONOFF TRV-ZBT**
 - **Danfoss 014G2463** - ID: eTRV0101
 - **SmartKot Opentherm**
+- **Sber Devices SBDV-00205**
 ---
 
 ## 💡 Зачем это нужно?

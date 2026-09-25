@@ -21,7 +21,7 @@ const SUPPORTED_THERMOSTATS = {
     SONOFF_TRVZBT: { modelId: "TRV-ZBT", manufacturer: "SONOFF", name: "SONOFF TRV-ZBT", hasSwitch: true },
     DANFOSS: { modelId: "eTRV0101", manufacturer: "Danfoss", name: "Danfoss eTRV0101", hasSwitch: true },
     SMARTKOT: { modelId: "Opentherm", manufacturer: "SmartKot", name: "SmartKot Opentherm", hasSwitch: false },
-    SMARTKOT: { modelId: "SBDV-00205", manufacturer: "SDevices", name: "Sber Devices SBDV-00205", hasSwitch: false }
+    SBER_SBDV00205: { modelId: "SBDV-00205", manufacturer: "SDevices", name: "Sber Devices SBDV-00205", hasSwitch: false }
 };
 
 // Получает список названий поддерживаемых термостатов
@@ -43,7 +43,7 @@ let scenarioDescription = {
 info = {
     name: scenarioName.ru,
     description: scenarioDescription.ru,
-    version: "2.5",
+    version: "2.6",
     author: "@BOOMikru",
     onStart: true,
 
@@ -78,8 +78,8 @@ info = {
                 ru: "Периодически менять значение температуры"
             },
             desc: {
-                en: "Periodically nudges the temperature on the thermostat so that the thermostat doesn't switch to its internal sensor. Pick an interval matching your thermostat's timeout: 30 minutes (Danfoss eTRV0101, timeout 35 min) or 1 hour (SONOFF TRVZB, timeout 2 hours). The nudge is skipped if the external sensor has updated recently (within 5 min for the 30-minute mode, within 60 min for the 1-hour mode).",
-                ru: "Периодически «встряхивает» значение температуры на термоголовке, чтобы она не переключилась на внутренний датчик. Выберите интервал под таймаут вашей термоголовки: 30 минут (Danfoss eTRV0101, таймаут 35 мин) или 1 час (SONOFF TRVZB, таймаут 2 часа). Встряска пропускается, если внешний датчик недавно обновлялся (менее 5 мин назад в режиме 30 минут, менее 60 мин назад в режиме 1 час)."
+                en: "Periodically nudges the temperature on the thermostat so that the thermostat doesn't switch to its internal sensor. Pick an interval matching your thermostat's timeout: 30 minutes (Danfoss eTRV0101, timeout 35 min) or 1 hour (SONOFF, timeout 2 hours). The nudge is skipped if the external sensor has updated recently (within 5 min for the 30-minute mode, within 60 min for the 1-hour mode).",
+                ru: "Периодически «встряхивает» значение температуры на термоголовке, чтобы она не переключилась на внутренний датчик. Выберите интервал под таймаут вашей термоголовки: 30 минут (Danfoss eTRV0101, таймаут 35 мин) или 1 час (SONOFF, таймаут 2 часа). У Sber Devices это время настраивается в параметрах устройства. Встряска пропускается, если внешний датчик недавно обновлялся (менее 5 мин назад в режиме 30 минут, менее 60 мин назад в режиме 1 час)."
             },
             type: "Integer",
             value: 0,
